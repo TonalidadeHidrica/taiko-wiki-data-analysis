@@ -1,10 +1,13 @@
 extern crate reqwest;
 
+use itertools::iterate;
 use scraper::{Html, Selector};
+use std::fmt;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use std::{error, fs};
+use std::time::Duration;
+use std::{error, fs, thread};
 
 const URL_PREFIX: &str = "http://www.wikihouse.com/taiko/";
 
@@ -33,16 +36,73 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
     Ok(())
 }
 
+#[allow(dead_code)]
+async fn sample_download(
+    reqwest_client: &reqwest::Client,
+    wiki_dir: &Path,
+) -> Result<(), Box<dyn error::Error>> {
+    download_file(
+        &reqwest_client,
+        &wiki_dir,
+        WikiFileEntry {
+            file_name: "C2C0B8DDA4CEC3A3BFCD20BFB7E3FEC2CEA4CEBCFDCFBFB6CA.txt".to_string(),
+            last_update: "".to_string(),
+            title: "".to_string(),
+        },
+    )
+    .await
+}
+
+#[derive(Debug)]
+struct ManyRequestErrors(Vec<reqwest::Error>);
+
+impl fmt::Display for ManyRequestErrors {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "Many many request resulted in nothing but a pile of errors..."
+        )
+    }
+}
+
+impl error::Error for ManyRequestErrors {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        // self.0.last()
+        None
+    }
+}
+
+async fn send_request_with_retry<F>(
+    request_builder_generator: F,
+) -> Result<reqwest::Response, ManyRequestErrors>
+where
+    F: Fn() -> reqwest::RequestBuilder,
+{
+    let mut errors = Vec::new();
+
+    for timeout in iterate(1000, |x| x * 2).take(5) {
+        let response = request_builder_generator().send().await;
+        match response {
+            Ok(response) => {
+                return Ok(response);
+            }
+            Err(error) => errors.push(error),
+        }
+        println!("Retrying after sleeping {} millis...", timeout);
+        thread::sleep(Duration::from_millis(timeout));
+    }
+
+    Err(ManyRequestErrors(errors))
+}
+
 async fn get_file_list(
     reqwest_client: &reqwest::Client,
-) -> Result<Vec<WikiFileEntry>, reqwest::Error> {
-    let html: String = reqwest_client
-        .get(URL_PREFIX)
-        .query(&[("cmd", "filelist")])
-        .send()
-        .await?
-        .text()
-        .await?;
+) -> Result<Vec<WikiFileEntry>, Box<dyn error::Error>> {
+    let html: String =
+        send_request_with_retry(|| reqwest_client.get(URL_PREFIX).query(&[("cmd", "filelist")]))
+            .await?
+            .text()
+            .await?;
     let document = Html::parse_document(&html);
 
     Ok(document
@@ -84,7 +144,7 @@ async fn download_file(
     let dest = wiki_dir.join(&file_entry.file_name);
     println!("{:?} {:?}", url, dest);
 
-    let response = reqwest_client.get(&url).send().await?;
+    let response = send_request_with_retry(|| reqwest_client.get(&url)).await?;
     let mut dest_file = File::create(dest)?;
     dest_file.write_all(&response.bytes().await?)?;
 
