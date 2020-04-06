@@ -1,5 +1,6 @@
 extern crate reqwest;
 
+use futures::StreamExt;
 use itertools::iterate;
 use scraper::{Html, Selector};
 use std::fmt;
@@ -31,9 +32,12 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
     let backup_dir = dump_dir.join("backup");
     fs::create_dir_all(&dump_dir)?;
 
-    for file_entry in file_entries {
-        download_wiki_entry(&reqwest_client, &wiki_dir, &backup_dir, file_entry).await?;
-    }
+    futures::stream::iter(file_entries.iter().map(|file_entry| {
+        download_wiki_entry(&reqwest_client, &wiki_dir, &backup_dir, file_entry)
+    }))
+    .buffer_unordered(8)
+    .collect::<Vec<_>>()
+    .await;
 
     Ok(())
 }
@@ -48,7 +52,7 @@ async fn sample_download(
         &reqwest_client,
         &wiki_dir,
         &backup_dir,
-        WikiFileEntry {
+        &WikiFileEntry {
             file_name: "C2C0B8DDA4CEC3A3BFCD20BFB7E3FEC2CEA4CEBCFDCFBFB6CA.txt".to_string(),
             last_update: "".to_string(),
             title: "".to_string(),
@@ -143,7 +147,7 @@ async fn download_wiki_entry(
     reqwest_client: &reqwest::Client,
     wiki_dir: &Path,
     backup_dir: &Path,
-    file_entry: WikiFileEntry,
+    file_entry: &WikiFileEntry,
 ) -> Result<(), Box<dyn error::Error>> {
     let file_name = &file_entry.file_name;
     let url = URL_PREFIX.to_owned() + "wiki/" + file_name;
