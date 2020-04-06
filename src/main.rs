@@ -1,5 +1,6 @@
 extern crate reqwest;
 
+use async_std::task;
 use futures::StreamExt;
 use itertools::iterate;
 use scraper::{Html, Selector};
@@ -8,7 +9,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
-use std::{error, fs, thread};
+use std::{error, fs};
 
 const URL_PREFIX: &str = "http://www.wikihouse.com/taiko/";
 
@@ -32,7 +33,7 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
     let backup_dir = dump_dir.join("backup");
     fs::create_dir_all(&backup_dir)?;
 
-    futures::stream::iter(file_entries.iter().map(|file_entry| {
+    futures::stream::iter(file_entries.iter().take(20).map(|file_entry| {
         download_wiki_entry(&reqwest_client, &wiki_dir, &backup_dir, file_entry)
     }))
     .buffer_unordered(8)
@@ -92,13 +93,13 @@ where
         let response = request_builder_generator().send().await;
         match response {
             Ok(response) => {
-                thread::sleep(Duration::from_millis(100));
+                task::sleep(Duration::from_millis(100)).await;
                 return Ok(response);
             }
             Err(error) => errors.push(error),
         }
         println!("Retrying after sleeping {} millis...", timeout);
-        thread::sleep(Duration::from_millis(timeout));
+        task::sleep(Duration::from_millis(timeout)).await;
     }
 
     Err(ManyRequestErrors(errors))
