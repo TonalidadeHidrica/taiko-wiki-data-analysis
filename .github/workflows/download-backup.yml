@@ -1,0 +1,27 @@
+name: Download dump data of taiko-wiki
+on:
+  shedule:
+    - cron: '0 19 * * *'
+
+jobs:
+  build:
+    name: Build TeX
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Git repository
+        uses: actions/checkout@v1
+
+      - name: Determine the filename to save
+        run: "echo ::set-env name=save_file_name::taiko-wiki-dump-`date '+%Y%m%d-%H%M%S'`.tar.gz"
+
+      - name: Execute download
+        run: cargo run --release
+
+      - name: Compress the result as .tar.gz
+        run: tar zcf ${{ env.save_file_name }} dump-data
+
+      - name: Upload generated file
+        uses: actions/checkout@v1
+        with:
+          name: ${{ env.save_file_name }}
+          path: ${{ env.save_file_name }}
