@@ -21,7 +21,7 @@ jobs:
         run: tar zcf ${{ env.save_file_name }} dump-data
 
       - name: Upload generated file
-        uses: actions/checkout@v1
+        uses: actions/upload-artifact@v1
         with:
           name: ${{ env.save_file_name }}
           path: ${{ env.save_file_name }}
