@@ -28,9 +28,11 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
     fs::create_dir_all(&dump_dir)?;
     let wiki_dir = dump_dir.join("wiki");
     fs::create_dir_all(&wiki_dir)?;
+    let backup_dir = dump_dir.join("backup");
+    fs::create_dir_all(&dump_dir)?;
 
     for file_entry in file_entries {
-        download_file(&reqwest_client, &wiki_dir, file_entry).await?;
+        download_wiki_entry(&reqwest_client, &wiki_dir, &backup_dir, file_entry).await?;
     }
 
     Ok(())
@@ -40,10 +42,12 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
 async fn sample_download(
     reqwest_client: &reqwest::Client,
     wiki_dir: &Path,
+    backup_dir: &Path,
 ) -> Result<(), Box<dyn error::Error>> {
-    download_file(
+    download_wiki_entry(
         &reqwest_client,
         &wiki_dir,
+        &backup_dir,
         WikiFileEntry {
             file_name: "C2C0B8DDA4CEC3A3BFCD20BFB7E3FEC2CEA4CEBCFDCFBFB6CA.txt".to_string(),
             last_update: "".to_string(),
@@ -135,15 +139,35 @@ async fn get_file_list(
         .collect())
 }
 
-async fn download_file(
+async fn download_wiki_entry(
     reqwest_client: &reqwest::Client,
     wiki_dir: &Path,
+    backup_dir: &Path,
     file_entry: WikiFileEntry,
 ) -> Result<(), Box<dyn error::Error>> {
-    let url = URL_PREFIX.to_owned() + "wiki/" + &file_entry.file_name;
-    let dest = wiki_dir.join(&file_entry.file_name);
-    println!("{:?} {:?}", url, dest);
+    let file_name = &file_entry.file_name;
+    let url = URL_PREFIX.to_owned() + "wiki/" + file_name;
+    let dest = wiki_dir.join(file_name);
+    get_and_save_to_file(reqwest_client, url, dest).await?;
 
+    let backup_file_name = Path::new(file_name).with_extension("gz");
+    let backup_file_name = backup_file_name.to_str().unwrap();
+    let url = URL_PREFIX.to_owned() + "backup/" + backup_file_name;
+    let dest = backup_dir.join(backup_file_name);
+    get_and_save_to_file(reqwest_client, url, dest).await?;
+
+    Ok(())
+}
+
+async fn get_and_save_to_file<P>(
+    reqwest_client: &reqwest::Client,
+    url: String,
+    dest: P,
+) -> Result<(), Box<dyn error::Error>>
+where
+    P: AsRef<Path>,
+{
+    println!("Saving {} into {}", url, dest.as_ref().display());
     let response = send_request_with_retry(|| reqwest_client.get(&url)).await?;
     let mut dest_file = File::create(dest)?;
     dest_file.write_all(&response.bytes().await?)?;
