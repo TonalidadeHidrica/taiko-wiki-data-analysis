@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
     let wiki_dir = dump_dir.join("wiki");
     fs::create_dir_all(&wiki_dir)?;
     let backup_dir = dump_dir.join("backup");
-    fs::create_dir_all(&dump_dir)?;
+    fs::create_dir_all(&backup_dir)?;
 
     futures::stream::iter(file_entries.iter().map(|file_entry| {
         download_wiki_entry(&reqwest_client, &wiki_dir, &backup_dir, file_entry)
@@ -171,7 +171,7 @@ async fn get_and_save_to_file<P>(
 where
     P: AsRef<Path>,
 {
-    println!("Saving {} into {}", url, dest.as_ref().display());
+    // println!("Saving {} into {}", url, dest.as_ref().display());
     let response = send_request_with_retry(|| reqwest_client.get(&url)).await?;
     let mut dest_file = File::create(dest)?;
     dest_file.write_all(&response.bytes().await?)?;
