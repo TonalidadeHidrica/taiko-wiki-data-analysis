@@ -1,7 +1,10 @@
 extern crate reqwest;
 
 use scraper::{Html, Selector};
-use std::error;
+use std::fs::File;
+use std::io::Write;
+use std::path::Path;
+use std::{error, fs};
 
 const URL_PREFIX: &str = "http://www.wikihouse.com/taiko/";
 
@@ -16,13 +19,22 @@ struct WikiFileEntry {
 async fn main() -> Result<(), Box<dyn error::Error>> {
     let reqwest_client = reqwest::Client::new();
 
-    get_file_list(reqwest_client).await?;
+    let file_entries = get_file_list(&reqwest_client).await?;
+
+    let dump_dir = Path::new("dump-data");
+    fs::create_dir_all(&dump_dir)?;
+    let wiki_dir = dump_dir.join("wiki");
+    fs::create_dir_all(&wiki_dir)?;
+
+    for file_entry in file_entries {
+        download_file(&reqwest_client, &wiki_dir, file_entry).await?;
+    }
 
     Ok(())
 }
 
 async fn get_file_list(
-    reqwest_client: reqwest::Client,
+    reqwest_client: &reqwest::Client,
 ) -> Result<Vec<WikiFileEntry>, reqwest::Error> {
     let html: String = reqwest_client
         .get(URL_PREFIX)
@@ -61,4 +73,20 @@ async fn get_file_list(
             }
         })
         .collect())
+}
+
+async fn download_file(
+    reqwest_client: &reqwest::Client,
+    wiki_dir: &Path,
+    file_entry: WikiFileEntry,
+) -> Result<(), Box<dyn error::Error>> {
+    let url = URL_PREFIX.to_owned() + "wiki/" + &file_entry.file_name;
+    let dest = wiki_dir.join(&file_entry.file_name);
+    println!("{:?} {:?}", url, dest);
+
+    let response = reqwest_client.get(&url).send().await?;
+    let mut dest_file = File::create(dest)?;
+    dest_file.write_all(&response.bytes().await?)?;
+
+    Ok(())
 }
