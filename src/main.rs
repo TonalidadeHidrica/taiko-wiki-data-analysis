@@ -92,6 +92,7 @@ where
         let response = request_builder_generator().send().await;
         match response {
             Ok(response) => {
+                thread::sleep(Duration::from_millis(100));
                 return Ok(response);
             }
             Err(error) => errors.push(error),
