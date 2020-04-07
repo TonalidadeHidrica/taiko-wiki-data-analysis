@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
     let backup_dir = dump_dir.join("backup");
     fs::create_dir_all(&backup_dir)?;
 
-    futures::stream::iter(file_entries.iter().take(20).map(|file_entry| {
+    futures::stream::iter(file_entries.iter().map(|file_entry| {
         download_wiki_entry(&reqwest_client, &wiki_dir, &backup_dir, file_entry)
     }))
     .buffer_unordered(8)
