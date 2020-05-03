@@ -15,7 +15,7 @@ jobs:
         run: "echo ::set-env name=save_file_name::taiko-wiki-dump-`date '+%Y%m%d-%H%M%S'`.tar.gz"
 
       - name: Execute download
-        run: cargo run --release
+        run: cargo run --bin download-backup --release
 
       - name: Compress the result as .tar.gz
         run: tar zcf ${{ env.save_file_name }} dump-data

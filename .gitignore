@@ -16,5 +16,8 @@
 
 # End of https://www.gitignore.io/api/rust
 
+# src/bin/ folder is source directory.
+!/src/bin/
+
 
 dump-data/
