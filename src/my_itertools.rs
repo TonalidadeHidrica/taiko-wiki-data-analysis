@@ -1,7 +1,3 @@
-// Why should I do this???
-#[allow(unused_imports)]
-use itertools::Itertools;
-
 pub trait MyItertools: Iterator {
     fn split_first(mut self) -> (Option<Self::Item>, Self)
     where
@@ -15,6 +11,8 @@ impl<T: ?Sized> MyItertools for T where T: Iterator {}
 
 #[test]
 fn test_take_first() {
+    use itertools::Itertools;
+
     let vec = vec![3, 4, 5];
     let (first, remain) = vec.iter().split_first();
     assert_eq!(first, Some(&3));
