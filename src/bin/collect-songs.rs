@@ -1,12 +1,16 @@
 extern crate reqwest;
 
+use if_chain::if_chain;
+
 use encoding_rs::DecoderResult;
-use itertools::Itertools;
-use scraper::{ElementRef, Html, Selector};
+use scraper::{Html, };
 use std::error;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use taiko_wiki_data_analysis::pukiwiki_reparser::structs::{
+    table, BodyElement, Document, InlineElement, InlineElements,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn error::Error>> {
@@ -17,57 +21,72 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
     let path =
         wiki_dir.join("C2C0B8DDA4CEC3A3BFCD20BFB7E3FEC2CEA4CEBCFDCFBFB6CA2FA5B0A5EAA1BCA5F3.txt");
     let song_list_page = get_wiki(&mut decoder, &reqwest_client, path).await?;
+    let parse_result = Document::parse(&song_list_page);
 
-    let rows = song_list_page
-        .select(&Selector::parse("table > tbody").unwrap())
-        .max_by_key(|x| x.descendants().count())
-        .unwrap()
-        .select(&Selector::parse(":scope > tr").unwrap())
-        .collect_vec();
-
-    let contents = {
-        let header_predicate = |x: &ElementRef| x.children().count() == 1;
-        let headers = rows.iter().filter(|x| header_predicate(x));
-        let mut contents = rows.split(header_predicate);
-        assert_eq!(contents.next().unwrap(), &[]);
-        headers
-            .zip(contents)
-            .flat_map(|(x, y)| y.iter().map(move |z| (x, z)))
-            .collect_vec()
-    };
-    for (genre, row) in contents {
-        let genre_title: String = genre.text().collect_vec().join("");
-
-        let cells = row
-            .select(&Selector::parse(":scope > td").unwrap())
-            .collect_vec();
-        assert_eq!(cells.len(), 10);
-
-        let title_cell = cells.get(3).unwrap();
-        let elements = title_cell
-            .children()
-            .map(|x| ElementRef::wrap(x).ok_or(x))
-            .collect_vec();
-        assert!(elements.iter().filter_map(|x| x.err()).all(|x| x
-            .value()
-            .as_text()
-            .map_or(false, |y| y.text.to_string().trim().is_empty())));
-        let elements = elements
-            .iter()
-            .filter_map(|x| x.ok().map(|x| x))
-            .collect_vec();
-        let title_element = elements.get(0).unwrap();
-        assert!(Selector::parse("strong").unwrap().matches(title_element));
-        let mut title_texts = title_element
-            .children()
-            .map(|x| x.value().as_text().map(|x| x.text.to_string()));
-        let song_title = title_texts.next().unwrap().unwrap();
-        assert!(title_texts.next().is_none());
-
-        println!("{}\t{}", genre_title, song_title);
+    let table = (parse_result.0)
+        .0
+        .iter()
+        .filter_map(|x| match x {
+            BodyElement::Table(t) => Some(t),
+            _ => None,
+        })
+        .max_by_key(|t| t.body.len())
+        .unwrap();
+    for (genre, song) in table_to_songs(table) {
+        println!("{}\t{}", genre, song);
     }
 
     Ok(())
+}
+
+type SongEntry = (String, String);
+// type SongEntry<'a> = (&'a String, &'a String);
+
+fn table_to_songs(table: &table::Table) -> impl Iterator<Item=SongEntry> + '_ {
+    table
+        .body
+        .iter()
+        .scan(Option::<String>::None, |bef, row| match row.0.len() {
+            1 => {
+                *bef = Some(row_to_genre_name(row));
+                Some(None)
+            }
+            10 => {
+                Some(Some(row_to_song_entry(bef.to_owned().unwrap(), row)))
+            }
+            _ => panic!(),
+        })
+        .flatten()
+}
+
+fn row_to_genre_name(row: &table::Row) -> String {
+    if_chain! {
+        if let [ table::Cell { contents: InlineElements(ref elements), .. } ] = row.0[..];
+        if let [ InlineElement::Strong(InlineElements(ref elements)), InlineElement::Anchor {..} ] = elements[..];
+        if let [ InlineElement::Text(ref text) ] = elements[..];
+        then {
+            text.to_string()
+        } else {
+            panic!();
+        }
+    }
+}
+
+fn row_to_song_entry(genre_name: String, row: &table::Row) -> SongEntry {
+    let song_name = match row.0[3].contents.0[..] {
+        [InlineElement::Strong(InlineElements(ref text))] | [InlineElement::Strong(InlineElements(ref text)), _, _] => {
+            if let [InlineElement::Text(text)] = &text[..] {
+                text
+            } else {
+                panic!()
+            }
+        }
+        ref others => {
+            panic!("{:#?}", others);
+        }
+    };
+
+    (genre_name, song_name.to_owned())
 }
 
 async fn get_wiki<P>(
@@ -75,8 +94,8 @@ async fn get_wiki<P>(
     reqwest_client: &reqwest::Client,
     path: P,
 ) -> Result<Html, Box<dyn error::Error>>
-where
-    P: AsRef<Path>,
+    where
+        P: AsRef<Path>,
 {
     let mut file = File::open(path)?;
     let mut buf = Vec::new();
