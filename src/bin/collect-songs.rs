@@ -3,7 +3,7 @@ extern crate reqwest;
 use if_chain::if_chain;
 
 use encoding_rs::DecoderResult;
-use scraper::{Html, };
+use scraper::Html;
 use std::error;
 use std::fs::File;
 use std::io::Read;
@@ -42,7 +42,7 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
 type SongEntry = (String, String);
 // type SongEntry<'a> = (&'a String, &'a String);
 
-fn table_to_songs(table: &table::Table) -> impl Iterator<Item=SongEntry> + '_ {
+fn table_to_songs(table: &table::Table) -> impl Iterator<Item = SongEntry> + '_ {
     table
         .body
         .iter()
@@ -51,9 +51,7 @@ fn table_to_songs(table: &table::Table) -> impl Iterator<Item=SongEntry> + '_ {
                 *bef = Some(row_to_genre_name(row));
                 Some(None)
             }
-            10 => {
-                Some(Some(row_to_song_entry(bef.to_owned().unwrap(), row)))
-            }
+            10 => Some(Some(row_to_song_entry(bef.to_owned().unwrap(), row))),
             _ => panic!(),
         })
         .flatten()
@@ -74,7 +72,8 @@ fn row_to_genre_name(row: &table::Row) -> String {
 
 fn row_to_song_entry(genre_name: String, row: &table::Row) -> SongEntry {
     let song_name = match row.0[3].contents.0[..] {
-        [InlineElement::Strong(InlineElements(ref text))] | [InlineElement::Strong(InlineElements(ref text)), _, _] => {
+        [InlineElement::Strong(InlineElements(ref text))]
+        | [InlineElement::Strong(InlineElements(ref text)), _, _] => {
             if let [InlineElement::Text(text)] = &text[..] {
                 text
             } else {
@@ -94,8 +93,8 @@ async fn get_wiki<P>(
     reqwest_client: &reqwest::Client,
     path: P,
 ) -> Result<Html, Box<dyn error::Error>>
-    where
-        P: AsRef<Path>,
+where
+    P: AsRef<Path>,
 {
     let mut file = File::open(path)?;
     let mut buf = Vec::new();
