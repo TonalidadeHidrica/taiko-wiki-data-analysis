@@ -14,18 +14,18 @@ impl Document {
         }
 
         Document(BodyElements::parse(
-            &document.select(&*BODY_SELECTOR).next().unwrap(),
+            document.select(&*BODY_SELECTOR).next().unwrap(),
         ))
     }
 }
 
 impl BodyElements {
-    fn parse(parent: &ElementRef) -> Self {
+    fn parse(parent: ElementRef) -> BodyElements {
         BodyElements(parse_body_elements(parent))
     }
 }
 
-fn parse_body_elements(parent: &ElementRef) -> Vec<BodyElement> {
+fn parse_body_elements(parent: ElementRef) -> Vec<BodyElement> {
     let mut elements = Vec::new();
     for child in parent.children() {
         match child.value() {
@@ -40,7 +40,7 @@ fn parse_body_elements(parent: &ElementRef) -> Vec<BodyElement> {
                     if element.value().name() != "table" {
                         continue;
                     }
-                    elements.push(BodyElement::Table(parse_table(&element)));
+                    elements.push(BodyElement::Table(parse_table(element)));
                 }
             }
             node => elements.push(BodyElement::Unknown(node.to_owned())),
@@ -50,12 +50,12 @@ fn parse_body_elements(parent: &ElementRef) -> Vec<BodyElement> {
 }
 
 impl InlineElements {
-    fn parse(parent: &ElementRef) -> Self {
+    fn parse(parent: ElementRef) -> InlineElements {
         InlineElements(parse_inline_elements(parent))
     }
 }
 
-fn parse_inline_elements(parent: &ElementRef) -> Vec<InlineElement> {
+fn parse_inline_elements(parent: ElementRef) -> Vec<InlineElement> {
     lazy_static! {
         static ref BR_SELECTOR: Selector = Selector::parse("br.spacer").unwrap();
         static ref ANCHOR_SELECTOR: Selector = Selector::parse("a.anchor[id]").unwrap();
@@ -67,33 +67,38 @@ fn parse_inline_elements(parent: &ElementRef) -> Vec<InlineElement> {
         match (ElementRef::wrap(child), child.value()) {
             (Some(element), _) => {
                 if element.value().name() == "strong" {
-                    elements.push(InlineElement::Strong(InlineElements::parse(&element)));
-                } else if BR_SELECTOR.matches(&element) {
+                    elements.push(InlineElement::Strong(InlineElements::parse(element)));
+                } else if (*BR_SELECTOR).matches(&element) {
                     elements.push(InlineElement::Br);
-                } else if ANCHOR_SELECTOR.matches(&element) {
+                } else if (*ANCHOR_SELECTOR).matches(&element) {
                     assert!(child.children().next().is_none());
                     elements.push(InlineElement::Anchor(
                         element.value().attr("id").unwrap().to_string(),
                     ));
-                } else if INTERNAL_LINK_SELECTOR.matches(&element) {
+                } else if (*INTERNAL_LINK_SELECTOR).matches(&element) {
                     elements.push(InlineElement::Link {
                         href: LinkType::WikiPage(
                             element.value().attr("title").unwrap().to_string(),
                         ),
-                        contents: InlineElements::parse(&element),
+                        contents: InlineElements::parse(element),
+                    });
+                } else {
+                    elements.push(InlineElement::UnknownElement {
+                        text: element.text().collect(),
+                        html: element.html(),
                     });
                 }
             }
             (None, Node::Text(node::Text { text })) => {
                 elements.push(InlineElement::Text(text.to_string()));
             }
-            (_, node) => elements.push(InlineElement::Unknown(node.to_owned())),
+            (_, node) => elements.push(InlineElement::UnknownNode(node.to_owned())),
         }
     }
     elements
 }
 
-fn parse_table(parent: &ElementRef) -> table::Table {
+fn parse_table(parent: ElementRef) -> table::Table {
     lazy_static! {
         static ref TBODY_TR_SELECTOR: Selector = Selector::parse(":scope > tbody > tr").unwrap();
         static ref TD_SELECTOR: Selector = Selector::parse(":scope > td").unwrap();
@@ -114,7 +119,7 @@ fn parse_table(parent: &ElementRef) -> table::Table {
                         table::Cell {
                             row_span: get_int("rowspan"),
                             col_span: get_int("colspan"),
-                            contents: InlineElements::parse(&td),
+                            contents: InlineElements::parse(td),
                         }
                     })
                     .collect_vec(),
@@ -130,7 +135,7 @@ fn parse_table(parent: &ElementRef) -> table::Table {
 #[test]
 fn it_parses_inline_text() {
     let fragment = Html::parse_fragment("hoge");
-    let parsed = parse_inline_elements(&fragment.root_element());
+    let parsed = parse_inline_elements(fragment.root_element());
     assert_eq!(parsed, vec![InlineElement::Text("hoge".to_string())]);
 }
 
@@ -138,7 +143,7 @@ fn it_parses_inline_text() {
 fn it_parses_table() {
     let table = Html::parse_fragment("<table><tr><td>hoge</td></tr></table>");
     let parsed =
-        parse_table(&ElementRef::wrap(table.root_element().first_child().unwrap()).unwrap());
+        parse_table(ElementRef::wrap(table.root_element().first_child().unwrap()).unwrap());
     assert_eq!(
         parsed,
         table::Table {

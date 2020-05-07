@@ -45,7 +45,11 @@ pub enum InlineElement {
         contents: InlineElements,
     },
     Anchor(String),
-    Unknown(Node),
+    UnknownElement {
+        text: String,
+        html: String,
+    },
+    UnknownNode(Node),
 }
 
 #[derive(Debug, PartialEq)]
