@@ -1,4 +1,7 @@
-pub fn chmin<T>(input: &mut T, limit: T) -> bool where T: PartialOrd {
+pub fn chmin<T>(input: &mut T, limit: T) -> bool
+where
+    T: PartialOrd,
+{
     if *input > limit {
         *input = limit;
         true
@@ -7,7 +10,10 @@ pub fn chmin<T>(input: &mut T, limit: T) -> bool where T: PartialOrd {
     }
 }
 
-pub fn chmax<T>(input: &mut T, limit: T) -> bool where T: PartialOrd {
+pub fn chmax<T>(input: &mut T, limit: T) -> bool
+where
+    T: PartialOrd,
+{
     if *input < limit {
         *input = limit;
         true
