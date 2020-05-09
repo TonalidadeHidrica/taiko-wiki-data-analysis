@@ -89,22 +89,18 @@ impl InlineElements {
 fn parse_inline_elements(parent: ElementRef) -> Vec<InlineElement> {
     parent
         .children()
-        .flat_map(parse_inline_element)
+        .filter_map(parse_inline_element)
         .collect_vec()
 }
 
-fn parse_inline_element(node: NodeRef<Node>) -> Vec<InlineElement> {
-    let mut elements = Vec::new();
+fn parse_inline_element(node: NodeRef<Node>) -> Option<InlineElement> {
     match (ElementRef::wrap(node), node.value()) {
         (Some(element), _) => {
-            elements.push(parse_inline_element_from_element_ref(element).unwrap_or_else(identity))
+            Some(parse_inline_element_from_element_ref(element).unwrap_or_else(identity))
         }
-        (None, Node::Text(node::Text { text })) => {
-            elements.push(InlineElement::Text(text.to_string()));
-        }
-        (_, node) => elements.push(InlineElement::Unknown(Unknown::Node(node.to_owned()))),
+        (None, Node::Text(node::Text { text })) => Some(InlineElement::Text(text.to_string())),
+        (_, node) => Some(InlineElement::Unknown(Unknown::Node(node.to_owned()))),
     }
-    elements
 }
 
 fn parse_inline_element_from_element_ref(
