@@ -1,15 +1,27 @@
 use scraper::node::Node;
 
 #[derive(Debug)]
-pub struct Document(pub BodyElements);
+pub struct Document(pub BlockElements);
 
 #[derive(Debug)]
-pub struct BodyElements(pub Vec<BodyElement>);
+pub struct BlockElements(pub Vec<BlockElement>);
 
-#[derive(Debug)]
-pub enum BodyElement {
+#[derive(Debug, PartialEq)]
+pub enum BlockElement {
     Table(table::Table),
-    Unknown(Node),
+    Heading {
+        level: HeadingType,
+        contents: InlineElements,
+    },
+    List(list::List),
+    Unknown(Unknown),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum HeadingType {
+    H2,
+    H3,
+    H4,
 }
 
 pub mod table {
@@ -32,6 +44,31 @@ pub mod table {
     }
 }
 
+pub mod list {
+    use self::super::{BlockElement, InlineElement};
+
+    #[derive(Debug, PartialEq)]
+    pub struct List {
+        pub kind: Kind,
+        pub items: Vec<Item>,
+    }
+
+    #[derive(Debug, PartialEq)]
+    pub enum Kind {
+        ORDERED,
+        UNORDERED,
+    }
+
+    #[derive(Debug, PartialEq)]
+    pub struct Item(pub Vec<Element>);
+
+    #[derive(Debug, PartialEq)]
+    pub enum Element {
+        Block(BlockElement),
+        Inline(InlineElement),
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct InlineElements(pub Vec<InlineElement>);
 
@@ -45,11 +82,7 @@ pub enum InlineElement {
         contents: InlineElements,
     },
     Anchor(String),
-    UnknownElement {
-        text: String,
-        html: String,
-    },
-    UnknownNode(Node),
+    Unknown(Unknown),
 }
 
 #[derive(Debug, PartialEq)]
@@ -57,4 +90,10 @@ pub enum LinkType {
     Target(String),
     WikiPage(String),
     External(String),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Unknown {
+    Element { text: String, html: String },
+    Node(Node),
 }
