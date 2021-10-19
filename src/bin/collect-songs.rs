@@ -1,6 +1,5 @@
 use encoding_rs::EUC_JP;
 use itertools::Itertools;
-use reqwest;
 use scraper::Html;
 use std::error;
 use std::fmt::Debug;
@@ -32,7 +31,7 @@ where
     let path = wiki_dir
         .as_ref()
         .join("C2C0B8DDA4CEC3A3BFCD20BFB7E3FEC2CEA4CEBCFDCFBFB6CA2FA5B0A5EAA1BCA5F3.txt");
-    let document = get_wiki(&reqwest_client, path).await?;
+    let document = get_wiki(reqwest_client, path).await?;
 
     let table = (document.0)
         .0

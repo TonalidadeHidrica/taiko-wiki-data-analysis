@@ -4,11 +4,12 @@ use itertools::Itertools;
 use num_traits::clamp;
 use std::collections::HashSet;
 
+type TableLikeRet<'a, Group> = Vec<Option<TableChild<&'a Group, &'a <Group as TRGroupLike>::Row>>>;
+
 pub trait TableLike {
     type Group: TRGroupLike;
     // type I: Iterator<Item = Option<TableChild<Self::Group, <Self::Group as TRGroupLike>::Row>>>;
-    fn children(&self)
-        -> Vec<Option<TableChild<&Self::Group, &<Self::Group as TRGroupLike>::Row>>>;
+    fn children(&self) -> TableLikeRet<Self::Group>;
 }
 
 pub enum TableChild<P, R> {
@@ -116,7 +117,10 @@ where
 
     let mut context = Context::default();
     // 1.
-    context.x_width = 0;
+    #[allow(clippy::field_reassign_with_default)]
+    {
+        context.x_width = 0;
+    }
     // 2.
     context.y_height = 0;
     // 3.
@@ -179,7 +183,7 @@ where
             .insert(cell.col_span.start, cell);
     }
 
-    return parsed::Table { rows };
+    parsed::Table { rows }
 }
 
 fn algorithm_for_processing_row_groups<P: TRGroupLike>(
@@ -295,8 +299,6 @@ mod tests {
     use crate::html5_table_parser::{
         CellKind, CellLike, RowLike, TRGroupLike, TableChild, TableLike,
     };
-    use futures::StreamExt;
-    use indexmap::map::IndexMap;
     use itertools::Itertools;
 
     struct Table(Vec<TableChild<RowGroup, Row>>);
