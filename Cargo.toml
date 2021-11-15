@@ -2,7 +2,7 @@
 name = "taiko-wiki-data-analysis"
 version = "0.1.0"
 authors = ["TonalidadeHidrica"]
-edition = "2018"
+edition = "2021"
 
 [[bin]]
 name = "download-backup"
