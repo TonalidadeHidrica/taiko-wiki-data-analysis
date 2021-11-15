@@ -25,7 +25,7 @@ pub enum HeadingType {
 }
 
 pub mod table {
-    use self::super::InlineElements;
+    use super::InlineElements;
 
     #[derive(Debug, PartialEq)]
     pub struct Table {
@@ -45,7 +45,7 @@ pub mod table {
 }
 
 pub mod list {
-    use self::super::{BlockElement, InlineElement};
+    use super::{BlockElement, InlineElement};
 
     #[derive(Debug, PartialEq)]
     pub struct List {

@@ -1,6 +1,6 @@
 use lazy_static::lazy_static;
 
-use self::super::structs::Document;
+use super::structs::Document;
 use crate::pukiwiki_reparser::structs::{
     list, table, BlockElement, BlockElements, HeadingType, InlineElement, InlineElements, LinkType,
     Unknown,
