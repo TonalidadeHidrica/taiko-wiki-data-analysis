@@ -5,9 +5,54 @@ pub trait MyItertools: Iterator {
     {
         (self.next(), self)
     }
+
+    #[inline]
+    fn take_until<P>(self, predicate: P) -> TakeUntil<Self, P>
+    where
+        Self: Sized,
+        P: FnMut(&Self::Item) -> bool,
+    {
+        TakeUntil::new(self, predicate)
+    }
 }
 
 impl<T: ?Sized> MyItertools for T where T: Iterator {}
+
+#[must_use = "iterators are lazy and do nothing unless consumed"]
+#[derive(Clone)]
+pub struct TakeUntil<I, P> {
+    iter: I,
+    flag: bool,
+    predicate: P,
+}
+
+impl<I, P> TakeUntil<I, P> {
+    fn new(iter: I, predicate: P) -> TakeUntil<I, P> {
+        TakeUntil {
+            iter,
+            flag: false,
+            predicate,
+        }
+    }
+}
+
+impl<I: Iterator, P> Iterator for TakeUntil<I, P>
+where
+    P: FnMut(&I::Item) -> bool,
+{
+    type Item = I::Item;
+
+    #[inline]
+    fn next(&mut self) -> Option<I::Item> {
+        if self.flag {
+            None
+        } else {
+            let x = self.iter.next()?;
+            self.flag = (self.predicate)(&x);
+            Some(x)
+        }
+    }
+}
 
 #[test]
 fn test_take_first() {
