@@ -270,8 +270,8 @@ impl<'a> BQuote<'a> {
     // If `text` does not start with `<` or `>`.
     fn new(text: &'a str, kind: BQuoteKind) -> Self {
         let strip_char = match kind {
-            BQuoteKind::Start => '+',
-            BQuoteKind::End => '-',
+            BQuoteKind::Start => '>',
+            BQuoteKind::End => '<',
         };
         let (level, text) = strip_prefix_n(text, strip_char, 3);
         assert!(level > 0);
@@ -610,15 +610,15 @@ pub fn parse<'a>(config: &Config, lines: &'a str) -> Vec<Element<'a>> {
         };
 
         // Other Character
-        let res = match line.chars().next().expect("line is non-empty") {
-            '-' => List::new(line, ListKind::Unordered).into(),
-            '+' => List::new(line, ListKind::Ordered).into(),
-            '>' => BQuote::new(line, BQuoteKind::Start).into(),
-            '<' => BQuote::new(line, BQuoteKind::End).into(),
-            ':' => into_common_2(factory_dlist(line)),
-            '|' => into_common_2(factory_table(line, config)),
-            ',' => into_common_2(factory_ytable(line)),
-            '#' => factory_div(line, [], config.disable_multiline_plugin).into_common(),
+        let res = match line.chars().next() {
+            Some('-') => List::new(line, ListKind::Unordered).into(),
+            Some('+') => List::new(line, ListKind::Ordered).into(),
+            Some('>') => BQuote::new(line, BQuoteKind::Start).into(),
+            Some('<') => BQuote::new(line, BQuoteKind::End).into(),
+            Some(':') => into_common_2(factory_dlist(line)),
+            Some('|') => into_common_2(factory_table(line, config)),
+            Some(',') => into_common_2(factory_ytable(line)),
+            Some('#') => factory_div(line, [], config.disable_multiline_plugin).into_common(),
             _ => factory_inline(line.into()).into_common(),
         };
         ret.push(res);
