@@ -324,9 +324,9 @@ impl<'a> TableCell<'a> {
             if let Some(align) = captures.get(1) {
                 let align = match align.as_str() {
                     "LEFT" => Align::Left,
-                    "CETNER" => Align::Center,
+                    "CENTER" => Align::Center,
                     "RIGHT" => Align::Right,
-                    _ => unreachable!("Guarded by regex"),
+                    _ => unreachable!("Guarded by regex: {:?}", align),
                 };
                 style.align = Some(align);
             } else if let Some(color) = captures.get(3) {
