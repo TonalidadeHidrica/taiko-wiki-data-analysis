@@ -1,5 +1,6 @@
 pub mod regex_ext;
 
+pub mod either_ext;
 pub mod html5_table_parser;
 pub mod my_itertools;
 pub mod pukiwiki_parser;
