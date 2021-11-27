@@ -15,16 +15,19 @@ jobs:
         uses: actions/checkout@v1
 
       - name: Determine the filename to save
-        run: "echo ::set-env name=save_file_name::taiko-wiki-dump-`date '+%Y%m%d-%H%M%S'`.tar.gz"
+        run: "echo save_file_name=taiko-wiki-dump-`date '+%Y%m%d-%H%M%S'`.tar.gz" >> $GITHUB_ENV
+
+      - name: View env value
+        run: echo $save_file_name
 
       - name: Execute download
         run: cargo run --bin download-backup --release
 
-      - name: Compress the result as .tar.gz
-        run: tar zcf ${{ env.save_file_name }} dump-data
+      # - name: Compress the result as .tar.gz
+      #   run: tar zcf ${{ env.save_file_name }} dump-data
 
       - name: Upload generated file
         uses: actions/upload-artifact@v1
         with:
-          name: ${{ env.save_file_name }}
-          path: ${{ env.save_file_name }}
+          name: $save_file_name
+          path: dump-data
