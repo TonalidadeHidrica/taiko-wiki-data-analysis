@@ -50,9 +50,9 @@ async fn sample_download(
     backup_dir: &Path,
 ) -> Result<(), Box<dyn error::Error>> {
     download_wiki_entry(
-        &reqwest_client,
-        &wiki_dir,
-        &backup_dir,
+        reqwest_client,
+        wiki_dir,
+        backup_dir,
         &WikiFileEntry {
             file_name: "C2C0B8DDA4CEC3A3BFCD20BFB7E3FEC2CEA4CEBCFDCFBFB6CA.txt".to_string(),
             last_update: "".to_string(),

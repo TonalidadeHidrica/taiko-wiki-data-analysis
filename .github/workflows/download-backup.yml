@@ -2,6 +2,9 @@ name: Download dump data of taiko-wiki
 on:
   schedule:
     - cron: '0 19 * * *'
+  push:
+    branches:
+      - master
 
 jobs:
   build:
