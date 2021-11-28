@@ -25,11 +25,11 @@ jobs:
           mkdir dump-data
           echo "This is a test!" > dump-data/test.txt
 
-      # - name: Execute download
-      #   run: cargo run --bin download-backup --release
+      - name: Execute download
+        run: cargo run --bin download-backup --release
 
       - name: Upload generated file
         uses: actions/upload-artifact@v1
         with:
-          name: "${{ env.save_file_name }}"
+          name: ${{ env.save_file_name }}
           path: dump-data
