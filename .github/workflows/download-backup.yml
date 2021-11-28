@@ -29,5 +29,5 @@ jobs:
       - name: Upload generated file
         uses: actions/upload-artifact@v1
         with:
-          name: {{ $env.save_file_name }}
+          name: "{{ $env.save_file_name }}"
           path: dump-data
