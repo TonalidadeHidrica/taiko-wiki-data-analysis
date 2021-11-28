@@ -2,9 +2,9 @@ name: Download dump data of taiko-wiki
 on:
   schedule:
     - cron: '0 19 * * *'
-  # push:
-  #   branches:
-  #     - master
+  push:
+    branches:
+      - develop-actions
 
 jobs:
   build:
@@ -18,7 +18,7 @@ jobs:
         run: "echo save_file_name=taiko-wiki-dump-`date '+%Y%m%d-%H%M%S'`.tar.gz >> $GITHUB_ENV"
 
       - name: View env value
-        run: echo $save_file_name
+        run: echo {{ $env.save_file_name }}
 
       - name: Execute download
         run: cargo run --bin download-backup --release
@@ -29,5 +29,5 @@ jobs:
       - name: Upload generated file
         uses: actions/upload-artifact@v1
         with:
-          name: $save_file_name
+          name: {{ $env.save_file_name }}
           path: dump-data
