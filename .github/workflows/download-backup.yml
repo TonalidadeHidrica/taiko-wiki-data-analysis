@@ -4,11 +4,11 @@ on:
     - cron: '0 19 * * *'
   push:
     branches:
-      - master
+      - develop-actions
 
 jobs:
   build:
-    name: Build TeX
+    name: Download wiki data
     runs-on: ubuntu-latest
     steps:
       - name: Set up Git repository
@@ -18,16 +18,18 @@ jobs:
         run: "echo save_file_name=taiko-wiki-dump-`date '+%Y%m%d-%H%M%S'`.tar.gz >> $GITHUB_ENV"
 
       - name: View env value
-        run: echo $save_file_name
+        run: echo ${{ env.save_file_name }}
+
+      - name: (Tmp) output some data
+        run: |
+          mkdir dump-data
+          echo "This is a test!" > dump-data/test.txt
 
       - name: Execute download
         run: cargo run --bin download-backup --release
 
-      # - name: Compress the result as .tar.gz
-      #   run: tar zcf ${{ env.save_file_name }} dump-data
-
       - name: Upload generated file
         uses: actions/upload-artifact@v1
         with:
-          name: $save_file_name
+          name: ${{ env.save_file_name }}
           path: dump-data
