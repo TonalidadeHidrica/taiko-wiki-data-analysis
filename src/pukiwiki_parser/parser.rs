@@ -7,7 +7,9 @@ use regex::Regex;
 use crate::{
     either_ext::{into_common_2, EitherExt},
     my_itertools::MyItertools,
-    pcre, regex,
+    pcre,
+    pcre_ext::MatchExt,
+    regex,
 };
 
 pub struct Config {
@@ -626,11 +628,16 @@ pub fn parse<'a>(config: &Config, lines: &'a str) -> Vec<Element<'a>> {
     ret
 }
 
+#[derive(Debug, derive_more::From)]
+enum InlineElement {
+    String(String),
+}
+
 fn make_link(text: Cow<str>) -> Cow<str> {
     let text = text.into_owned();
-    let count = pcre!(
+    let _res = pcre!(
         r#"""
-            ( # Link_plugin
+            ( # Link_plugin (1)
                 &
                 (      # (1) plain
                  (\w+) # (2) plugin name
@@ -648,13 +655,13 @@ fn make_link(text: Cow<str>) -> Cow<str> {
                 ;
             )
         |
-            ( # Link_note
+            ( # Link_note (6)
                 \(\(
                  ((?:(?R)|(?!\)\)).)*) # (1) note body
                 \)\)
             )
         |
-            ( # Link_url
+            ( # Link_url (8)
                 (\[\[             # (1) open bracket
                  ((?:(?!\]\]).)+) # (2) alias
                  (?:>|:)
@@ -665,7 +672,7 @@ fn make_link(text: Cow<str>) -> Cow<str> {
                 (?(9)\]\])      # close bracket
             )
         |
-            ( # Link_url_interwiki
+            ( # Link_url_interwiki (12)
                 \[       # open bracket
                 (        # (1) url
                  (?:(?:https?|ftp|news):\/\/|\.\.?\/)[!~*'();\/?:\@&=+$,%#\w.-]*
@@ -675,7 +682,7 @@ fn make_link(text: Cow<str>) -> Cow<str> {
                 \]       # close bracket
             )
         |
-            ( # Link_mailto
+            ( # Link_mailto (15)
                 (?:
                  \[\[
                  ((?:(?!\]\]).)+)(?:>|:)  # (1) alias
@@ -684,7 +691,7 @@ fn make_link(text: Cow<str>) -> Cow<str> {
                 (?(16)\]\])              # close bracket if (1)
             )
         |
-            ( # Link_interwikiname
+            ( # Link_interwikiname (18)
                 \[\[                  # open bracket
                 (?:
                  ((?:(?!\]\]).)+)>    # (1) alias
@@ -702,7 +709,7 @@ fn make_link(text: Cow<str>) -> Cow<str> {
                 \]\]                  # close bracket
             )
         |
-            ( # Link_bracketname
+            ( # Link_bracketname (24)
                 \[\[                     # Open bracket
                 (?:((?:(?!\]\]).)+)>)?   # (1) Alias
                 (\[\[)?                  # (2) Open bracket
@@ -716,24 +723,52 @@ fn make_link(text: Cow<str>) -> Cow<str> {
                 \]\]                     # Close bracket
             )
         |
-            ( # Link_wikiname
+            ( # Link_wikiname (29)
                 ((?:[A-Z][a-z]+){2,}(?!\w))
             )
         """#,
         x
     )
     .with(|pattern| {
-        let mut count = 0;
-        for _groups in pattern.borrow_mut().matches(&text) {
-            count += 1;
-            // dbg!(groups.group(0));
+        let mut res: Vec<InlineElement> = Vec::new();
+        let mut pos = 0;
+        for groups in pattern.borrow_mut().matches(&text) {
+            if pos < groups.group_start(0) {
+                let (s, t) = (pos, groups.group_start(0));
+                res.push(text[s..t].to_owned().into());
+                pos = groups.group_end(0);
+            }
+            if groups.group_opt(1).is_some() {
+                let _plugin_name = groups.group(2).to_owned();
+                let _parameter = groups.group_opt(3).map(str::to_owned);
+                let _body = groups.group_opt(4).map(str::to_owned);
+            } else if groups.group_opt(6).is_some() {
+                let _body = groups.group(7).to_owned();
+            } else if groups.group_opt(8).is_some() {
+                let _alias = groups.group_opt(10).map(str::to_owned);
+                let _url = groups.group(11).to_owned();
+            } else if groups.group_opt(12).is_some() {
+                let _url = groups.group(13).to_owned();
+                let _alias = groups.group(14).to_owned();
+            } else if groups.group_opt(15).is_some() {
+                let _alias = groups.group_opt(16).map(str::to_owned);
+                let _mailto = groups.group(17).to_owned();
+            } else if groups.group_opt(18).is_some() {
+                let _alias = groups.group_opt(19).map(str::to_owned);
+                let _interwiki = groups.group(21).to_owned();
+                let _param = groups.group(22).to_owned();
+            } else if groups.group_opt(24).is_some() {
+                let _alias = groups.group_opt(25).map(str::to_owned);
+                let _page_name = groups.group(27).to_owned();
+                let _anchor = groups.group_opt(28).map(str::to_owned);
+            } else if groups.group_opt(29).is_some() {
+                let _wikiname = groups.group_opt(30).map(str::to_owned);
+            }
         }
-        count
+        res
     });
 
-    count.to_string().into()
-
-    // "".into()
+    "".into()
 }
 
 /// Strips `c` from `s` as much as possible, but at most `n` times.

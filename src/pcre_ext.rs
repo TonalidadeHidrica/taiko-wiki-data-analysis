@@ -40,9 +40,31 @@ macro_rules! flags_add {
     };
 }
 
+mod inner {
+    use pcre::Match;
+
+    pub trait MatchExt {
+        fn group_opt<'a>(&self, n: usize) -> Option<&'a str>
+        where
+            Self: 'a;
+    }
+
+    impl<'s> MatchExt for Match<'s> {
+        fn group_opt<'a>(&self, n: usize) -> Option<&'s str>
+        where
+            Self: 'a,
+        {
+            (!self.group_start(n) > 0).then(|| self.group(n))
+        }
+    }
+}
+pub use inner::MatchExt;
+
 #[cfg(test)]
 mod test {
-    use pcre::CompileOption::*;
+    use pcre::{CompileOption::*, Pcre};
+
+    use super::MatchExt;
 
     #[test]
     fn test_macro() {
@@ -66,5 +88,18 @@ mod test {
             \w+  # This has a comment
         ", x => exec("   test   "));
         assert_eq!(a.map(|x| x.group(0)), Some("test"));
+    }
+
+    #[test]
+    fn test_match_ext() {
+        let s = "This is a test.";
+        let x = {
+            let mut regex = Pcre::compile(r"\w+(z)?").unwrap();
+            let res = regex.exec(s).unwrap();
+            assert_eq!(res.group_opt(0), Some("This"));
+            assert_eq!(res.group_opt(1), None);
+            res.group_opt(0)
+        };
+        assert_eq!(x, Some("This"));
     }
 }
