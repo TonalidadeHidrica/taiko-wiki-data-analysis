@@ -7,7 +7,7 @@ use regex::Regex;
 use crate::{
     either_ext::{into_common_2, EitherExt},
     my_itertools::MyItertools,
-    regex,
+    pcre, regex,
 };
 
 pub struct Config {
@@ -627,8 +627,113 @@ pub fn parse<'a>(config: &Config, lines: &'a str) -> Vec<Element<'a>> {
 }
 
 fn make_link(text: Cow<str>) -> Cow<str> {
-    // TODO
-    text
+    let text = text.into_owned();
+    let count = pcre!(
+        r#"""
+            ( # Link_plugin
+                &
+                (      # (1) plain
+                 (\w+) # (2) plugin name
+                 (?:
+                  \(
+                   ((?:(?!\)[;{]).)*) # (3) parameter
+                  \)
+                 )?
+                )
+                (?:
+                 \{
+                  ((?:(?R)|(?!};).)*) # (4) body
+                 \}
+                )?
+                ;
+            )
+        |
+            ( # Link_note
+                \(\(
+                 ((?:(?R)|(?!\)\)).)*) # (1) note body
+                \)\)
+            )
+        |
+            ( # Link_url
+                (\[\[             # (1) open bracket
+                 ((?:(?!\]\]).)+) # (2) alias
+                 (?:>|:)
+                )?
+                (                 # (3) url
+                 (?:(?:https?|ftp|news):\/\/|mailto:)[\w\/\@$()!?&%#:;.,~'=*+-]+
+                )
+                (?(9)\]\])      # close bracket
+            )
+        |
+            ( # Link_url_interwiki
+                \[       # open bracket
+                (        # (1) url
+                 (?:(?:https?|ftp|news):\/\/|\.\.?\/)[!~*'();\/?:\@&=+$,%#\w.-]*
+                )
+                \s
+                ([^\]]+) # (2) alias
+                \]       # close bracket
+            )
+        |
+            ( # Link_mailto
+                (?:
+                 \[\[
+                 ((?:(?!\]\]).)+)(?:>|:)  # (1) alias
+                )?
+                ([\w.-]+@[\w-]+\.[\w.-]+) # (2) mailto
+                (?(16)\]\])              # close bracket if (1)
+            )
+        |
+            ( # Link_interwikiname
+                \[\[                  # open bracket
+                (?:
+                 ((?:(?!\]\]).)+)>    # (1) alias
+                )?
+                (\[\[)?               # (2) open bracket
+                ((?:(?!\s|:|\]\]).)+) # (3) InterWiki
+                (?<! > | >\[\[ )      # not '>' or '>[['
+                :                     # separator
+                (                     # (4) param
+                 (\[\[)?              # (5) open bracket
+                 (?:(?!>|\]\]).)+
+                 (?(23)\]\])         # close bracket if (5)
+                )
+                (?(20)\]\])          # close bracket if (2)
+                \]\]                  # close bracket
+            )
+        |
+            ( # Link_bracketname
+                \[\[                     # Open bracket
+                (?:((?:(?!\]\]).)+)>)?   # (1) Alias
+                (\[\[)?                  # (2) Open bracket
+                (                        # (3) PageName
+                 (?:(?:[A-Z][a-z]+){2,}(?!\w))
+                 |
+                 (?:(?!\s):?[^\r\n\t\f\[\]<>#&":]+:?(?<!\s))
+                )?
+                (\#(?:[a-zA-Z][\w-]*)?)? # (4) Anchor
+                (?(26)\]\])             # Close bracket if (2)
+                \]\]                     # Close bracket
+            )
+        |
+            ( # Link_wikiname
+                ((?:[A-Z][a-z]+){2,}(?!\w))
+            )
+        """#,
+        x
+    )
+    .with(|pattern| {
+        let mut count = 0;
+        for _groups in pattern.borrow_mut().matches(&text) {
+            count += 1;
+            // dbg!(groups.group(0));
+        }
+        count
+    });
+
+    count.to_string().into()
+
+    // "".into()
 }
 
 /// Strips `c` from `s` as much as possible, but at most `n` times.

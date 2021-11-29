@@ -5,7 +5,7 @@ macro_rules! pcre {
         use pcre::Pcre;
         thread_local! {
             static PATTERN: RefCell<Pcre> = {
-                let flags = flags!($($($flags)*)?);
+                let flags = $crate::flags!($($($flags)*)?);
                 RefCell::new(Pcre::compile_with_options($pattern, &flags).unwrap())
             };
         }
@@ -13,31 +13,30 @@ macro_rules! pcre {
     }};
 
     ($pattern: expr $(, $($flags: ident)*)? => $method: ident($($args: expr),*)) => {{
-        let pattern = &pcre!($pattern $(, $($flags)*)?);
+        let pattern = &$crate::pcre!($pattern $(, $($flags)*)?);
         pattern.with(|pat| pat.borrow_mut().$method($($args),*))
     }};
 }
 
-#[allow(unused)]
+#[macro_export]
 macro_rules! flags {
     ($($flags: ident)*) => {{
         #[allow(unused_mut)]
         let mut flags = ::enum_set::EnumSet::<::pcre::CompileOption>::new();
-        flags_add!(flags, $($flags)*);
+        $(
+            $crate::flags_add!(flags, $flags);
+        )*
         flags
     }};
 }
 
-#[allow(unused)]
+#[macro_export]
 macro_rules! flags_add {
-    ($e: expr, x $($flags: ident)*) => {
+    ($e: expr, x) => {
         $e.insert(::pcre::CompileOption::Extended);
-        flags_add!($e, $($flags)*);
     };
-    ($e: expr, $offending_flag: ident $($flags: ident)*) => {
-        compile_error!(concat!("Unexpected flag: ", $offending_flag));
-    };
-    ($e: expr,) => {
+    ($e: expr, $offending_flag: ident) => {
+        compile_error!(concat!("Unexpected flag: ", stringify!($offending_flag)));
     };
 }
 
