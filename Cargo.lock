@@ -334,6 +334,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "entities"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5320ae4c3782150d900b79807611a59a99fc9a1d61d686faafc24b93fc8d7ca"
+
+[[package]]
 name = "enum-set"
 version = "0.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1564,6 +1570,7 @@ dependencies = [
  "ego-tree",
  "either",
  "encoding_rs",
+ "entities",
  "enum-set",
  "fs-err",
  "futures",

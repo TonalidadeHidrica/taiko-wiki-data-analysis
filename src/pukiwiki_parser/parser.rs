@@ -1,19 +1,24 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, collections::HashMap};
 
 use either::*;
+use entities::{Entity, ENTITIES};
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::{
     either_ext::{into_common_2, EitherExt},
     my_itertools::MyItertools,
-    pcre,
-    pcre_ext::MatchExt,
-    regex,
+    pcre, regex,
+    regex_ext::{
+        iter::{MatchComponent, MatchIterator},
+        pcre::MatchExt,
+    },
 };
 
 pub struct Config {
     disable_multiline_plugin: bool,
+    disable_inline_image_from_uri: bool,
     preformat_ltrim: bool,
 }
 impl Default for Config {
@@ -21,6 +26,7 @@ impl Default for Config {
         // Default value in pukiwiki.ini.php
         Self {
             disable_multiline_plugin: true,
+            disable_inline_image_from_uri: false,
             preformat_ltrim: true,
         }
     }
@@ -35,19 +41,19 @@ impl Config {
 }
 
 type FactoryInlineRet<'a> = Either<Paragraph<'a>, Inline<'a>>;
-fn factory_inline(text: Cow<str>) -> FactoryInlineRet {
+fn factory_inline<'a>(text: Cow<'a, str>, config: &Config) -> FactoryInlineRet<'a> {
     if let Some(text) = strip_prefix_cow(&text, '~') {
-        Left(Paragraph::new(text, ()))
+        Left(Paragraph::new(text, (), config))
     } else {
-        Right(Inline::new(text))
+        Right(Inline::new(text, config))
     }
 }
 
-fn factory_dlist(text: &str) -> Either<DList, FactoryInlineRet> {
+fn factory_dlist<'a>(text: &'a str, config: &Config) -> Either<DList<'a>, FactoryInlineRet<'a>> {
     if let Some((a, b)) = text.split_once('|') {
-        Left(DList::new(a, b))
+        Left(DList::new(a, b, config))
     } else {
-        Right(factory_inline(text.into()))
+        Right(factory_inline(text.into(), config))
     }
 }
 
@@ -62,16 +68,16 @@ fn factory_table<'a>(text: &'a str, config: &Config) -> Either<Table<'a>, Factor
         };
         Left(Table::new(out.get(1).unwrap().as_str(), kind, config))
     } else {
-        Right(factory_inline(text.into()))
+        Right(factory_inline(text.into(), config))
     }
 }
 
 /// panics if text is empty
-fn factory_ytable(text: &str) -> Either<YTable, FactoryInlineRet> {
+fn factory_ytable<'a>(text: &'a str, config: &Config) -> Either<YTable<'a>, FactoryInlineRet<'a>> {
     if text == "," {
-        Right(factory_inline(text.into()))
+        Right(factory_inline(text.into(), config))
     } else {
-        Left(YTable::new(text[1..].split(',')))
+        Left(YTable::new(text[1..].split(','), config))
     }
 }
 
@@ -79,7 +85,8 @@ fn factory_div<'a>(
     text: &'a str,
     remaining_lines: impl IntoIterator<Item = &'a str>,
     disable_multiline_plugin: bool,
-) -> Either<Div, Paragraph> {
+    config: &Config,
+) -> Either<Div<'a>, Paragraph<'a>> {
     #[allow(clippy::collapsible_else_if)]
     if disable_multiline_plugin {
         if let Some(captures) = regex!(r"^\#([^\(]+)(?:\((.*)\))?").captures(text) {
@@ -98,20 +105,20 @@ fn factory_div<'a>(
                 if brace_len == 0 {
                     return Left(Div::new(name, args, vec![]));
                 } else {
-                    // TODO only if the last line starts with the same numeber of }'s
+                    // TODO [compl] only if the last line starts with the same numeber of }'s
                     return Left(Div::new(name, args, remaining_lines));
                 }
             }
         }
     }
-    // TODO: is this the most efficient way?
+    // TODO: [perf] is this the most efficient way?
     let text = remaining_lines
         .into_iter()
         .fold(text.to_owned(), |mut x, y| {
             x += y;
             x
         });
-    Right(Paragraph::new(text.into(), ()))
+    Right(Paragraph::new(text.into(), (), config))
 }
 fn exist_plugin_convert(_plugin_name: &str) -> bool {
     true
@@ -120,17 +127,23 @@ fn exist_plugin_convert(_plugin_name: &str) -> bool {
 // Inline elements
 #[derive(Debug)]
 pub struct Inline<'a> {
-    src: Cow<'a, str>,
+    // src: Cow<'a, str>,
+    elements: Vec<InlineElement>,
+    /// Maybe we are going to use this lifetime afterwards
+    _phantom: std::marker::PhantomData<fn() -> &'a ()>,
 }
 impl<'a> Inline<'a> {
-    fn new(text: Cow<'a, str>) -> Self {
-        let text = if text.starts_with('\n') {
-            trim_cow(&text)
+    fn new(text: Cow<'a, str>, config: &Config) -> Self {
+        let elements = if text.starts_with('\n') {
+            vec![trim_cow(&text).into_owned().into()]
         } else {
-            // TODO: trim??
-            make_link(text)
+            // TODO: [compl] trim??
+            make_link(text, config)
         };
-        Self { src: text }
+        Self {
+            _phantom: Default::default(),
+            elements,
+        }
     }
 }
 
@@ -141,7 +154,7 @@ pub struct Paragraph<'a> {
     text: Option<Inline<'a>>,
 }
 impl<'a> Paragraph<'a> {
-    fn new(text: Cow<'a, str>, param: ()) -> Self {
+    fn new(text: Cow<'a, str>, param: (), config: &Config) -> Self {
         let text = text.is_empty().then(|| {
             let text = strip_prefix_cow(&text, '~').unwrap_or(text);
             // The original code:
@@ -150,7 +163,7 @@ impl<'a> Paragraph<'a> {
             // - if not, pass it to Factory_Inline as it is.
             // As a result, this execution of Factory_Inline always results in a call to Inline().
             // The first ' ' as a result of replacement is trimmed in the Inline constructor.
-            Inline::new(text)
+            Inline::new(text, config)
         });
         Self { param, text }
     }
@@ -171,7 +184,7 @@ enum HeadingLevel {
 impl<'a> Heading<'a> {
     /// # panics
     /// If text does not start with `*`
-    fn new(text: &'a str) -> Self {
+    fn new(text: &'a str, config: &Config) -> Self {
         let (level, text) = strip_prefix_n(text, '*', 3);
         let level = match level {
             0 => panic!("Should call with a text starting with '*'"),
@@ -204,7 +217,7 @@ impl<'a> Heading<'a> {
         };
 
         // insert to self
-        let text = factory_inline(text);
+        let text = factory_inline(text, config);
         Self { level, tag, text }
     }
 }
@@ -226,14 +239,14 @@ enum ListKind {
 impl<'a> List<'a> {
     // # Panics
     // If `text` does not start with specific character determined by `kind`
-    fn new(text: &'a str, kind: ListKind) -> Self {
+    fn new(text: &'a str, kind: ListKind, config: &Config) -> Self {
         let strip_char = match kind {
             ListKind::Ordered => '+',
             ListKind::Unordered => '-',
         };
         let (level, text) = strip_prefix_n(text, strip_char, 3);
         assert!(level > 0);
-        let text = factory_inline(text.into());
+        let text = factory_inline(text.into(), config);
         Self { kind, level, text }
     }
 }
@@ -247,11 +260,11 @@ pub struct DList<'a> {
 impl<'a> DList<'a> {
     // # Panics
     // If `word` does not start with `:`.
-    fn new(word: &'a str, desc: &'a str) -> Self {
+    fn new(word: &'a str, desc: &'a str, config: &Config) -> Self {
         let (level, word) = strip_prefix_n(word, ':', 3);
         assert!(level > 0);
-        let word = factory_inline(word.into());
-        let desc = (!desc.is_empty()).then(|| factory_inline(desc.into()));
+        let word = factory_inline(word.into(), config);
+        let desc = (!desc.is_empty()).then(|| factory_inline(desc.into(), config));
         Self { word, desc, level }
     }
 }
@@ -270,15 +283,15 @@ enum BQuoteKind {
 impl<'a> BQuote<'a> {
     // # Panics
     // If `text` does not start with `<` or `>`.
-    fn new(text: &'a str, kind: BQuoteKind) -> Self {
+    fn new(text: &'a str, kind: BQuoteKind, config: &Config) -> Self {
         let strip_char = match kind {
             BQuoteKind::Start => '>',
             BQuoteKind::End => '<',
         };
         let (level, text) = strip_prefix_n(text, strip_char, 3);
         assert!(level > 0);
-        let text =
-            (kind == BQuoteKind::Start || !text.is_empty()).then(|| factory_inline(text.into()));
+        let text = (kind == BQuoteKind::Start || !text.is_empty())
+            .then(|| factory_inline(text.into(), config));
         Self { kind, text, level }
     }
 }
@@ -364,7 +377,7 @@ impl<'a> TableCell<'a> {
                 None => (text, false),
             };
             let child = if text.starts_with('#') {
-                match factory_div(text, [], config.disable_multiline_plugin) {
+                match factory_div(text, [], config.disable_multiline_plugin, config) {
                     Left(div) => TableContentChild::Div(div),
                     Right(para) => match para.text {
                         Some(inline) => TableContentChild::Inline(inline),
@@ -372,7 +385,7 @@ impl<'a> TableCell<'a> {
                     },
                 }
             } else {
-                match factory_inline(text.into()) {
+                match factory_inline(text.into(), config) {
                     Left(para) => TableContentChild::Paragraph(para),
                     Right(inl) => TableContentChild::Inline(inl),
                 }
@@ -429,10 +442,10 @@ struct YTableCell<'a> {
 #[derive(Debug)]
 enum YTableContent<'a> {
     MergeRight,
-    Content(Cow<'a, str>),
+    Content(Vec<InlineElement>, std::marker::PhantomData<fn() -> &'a ()>),
 }
 impl<'a> YTableCell<'a> {
-    fn new(text: &'a str) -> Self {
+    fn new(text: &'a str, config: &Config) -> Self {
         let align = match (
             text.starts_with(char::is_whitespace),
             text.ends_with(char::is_whitespace),
@@ -446,7 +459,7 @@ impl<'a> YTableCell<'a> {
             YTableContent::MergeRight
         } else {
             #[allow(clippy::unit_arg)]
-            YTableContent::Content(make_link(text.into()))
+            YTableContent::Content(make_link(text.into(), config), Default::default())
         };
         Self { align, content }
     }
@@ -457,10 +470,10 @@ pub struct YTable<'a> {
     cells: Vec<YTableCell<'a>>,
 }
 impl<'a> YTable<'a> {
-    fn new(elements: impl IntoIterator<Item = &'a str>) -> Self {
+    fn new(elements: impl IntoIterator<Item = &'a str>, config: &Config) -> Self {
         let cells = elements
             .into_iter()
-            .map(|text| YTableCell::new(text))
+            .map(|text| YTableCell::new(text, config))
             .collect();
         Self { cells }
     }
@@ -512,13 +525,13 @@ pub enum Align {
 
 const NEWLINES: &[char] = &['\r', '\n'];
 
-/// Unless notated, the semantic of the element is "add-to-last".
+// "a" stands for "add-to-last".
 #[derive(Debug, derive_more::From)]
 pub enum Element<'a> {
     Inline(Inline<'a>),       // a
     Paragraph(Paragraph<'a>), // a
-    Heading(Heading<'a>),     // insert toplevel
-    HRule(HRule),             // insert toplevel
+    Heading(Heading<'a>),     // insert to toplevel
+    HRule(HRule),             // insert to toplevel
     List(List<'a>),           // a
     DList(DList<'a>),         // a
     BQuote(BQuote<'a>),       // a
@@ -526,8 +539,9 @@ pub enum Element<'a> {
     YTable(YTable<'a>),       // a
     Pre(Pre<'a>),             // a
     Div(Div<'a>),             // a
-    Align(Align),
-    Clear, // Insert toplevel
+    Align(Align),             // (Affect to the next element)
+    NewLine,                  // a
+    Clear,                    // insert to toplevel
 }
 
 pub fn parse<'a>(config: &Config, lines: &'a str) -> Vec<Element<'a>> {
@@ -583,9 +597,13 @@ pub fn parse<'a>(config: &Config, lines: &'a str) -> Vec<Element<'a>> {
                 // In this case, the line will always processed by #factory_inline.
                 // The last ~ is ignored because in original source it is converted to \r
                 // which is indistinguishable from terminal newline (maybe)
-                let res = factory_div(line, remaining_lines, config.disable_multiline_plugin)
-                    .into_common();
-                ret.push(res);
+                let res = factory_div(
+                    line,
+                    remaining_lines,
+                    config.disable_multiline_plugin,
+                    config,
+                );
+                ret.push(res.into_common());
                 // That's why we may skip remaining process in this loop
                 continue;
             }
@@ -593,7 +611,7 @@ pub fn parse<'a>(config: &Config, lines: &'a str) -> Vec<Element<'a>> {
 
         // Heading
         if line.starts_with('*') {
-            ret.push(Heading::new(line).into());
+            ret.push(Heading::new(line, config).into());
             continue;
         }
 
@@ -604,38 +622,107 @@ pub fn parse<'a>(config: &Config, lines: &'a str) -> Vec<Element<'a>> {
         }
 
         // Line Break
-        let line = if let Some(line) = line.strip_suffix('~') {
-            // $line = substr($line, 0, -1) . "\r";
-            line
+        let (line, has_newline) = if let Some(line) = line.strip_suffix('~') {
+            (line, true)
         } else {
-            line
+            (line, false)
         };
 
         // Other Character
         let res = match line.chars().next() {
-            Some('-') => List::new(line, ListKind::Unordered).into(),
-            Some('+') => List::new(line, ListKind::Ordered).into(),
-            Some('>') => BQuote::new(line, BQuoteKind::Start).into(),
-            Some('<') => BQuote::new(line, BQuoteKind::End).into(),
-            Some(':') => into_common_2(factory_dlist(line)),
+            Some('-') => List::new(line, ListKind::Unordered, config).into(),
+            Some('+') => List::new(line, ListKind::Ordered, config).into(),
+            Some('>') => BQuote::new(line, BQuoteKind::Start, config).into(),
+            Some('<') => BQuote::new(line, BQuoteKind::End, config).into(),
+            Some(':') => into_common_2(factory_dlist(line, config)),
             Some('|') => into_common_2(factory_table(line, config)),
-            Some(',') => into_common_2(factory_ytable(line)),
-            Some('#') => factory_div(line, [], config.disable_multiline_plugin).into_common(),
-            _ => factory_inline(line.into()).into_common(),
+            Some(',') => into_common_2(factory_ytable(line, config)),
+            Some('#') => {
+                factory_div(line, [], config.disable_multiline_plugin, config).into_common()
+            }
+            _ => factory_inline(line.into(), config).into_common(),
         };
         ret.push(res);
+
+        if has_newline {
+            ret.push(Element::NewLine);
+        }
     }
     ret
 }
 
 #[derive(Debug, derive_more::From)]
-enum InlineElement {
+pub enum InlineElement {
     String(String),
+    InlinePlugin(InlinePlugin),
+    Footnote(Footnote),
+    Link(Link),
+    InterWikiUrl(InterWikiUrl),
+    MailTo(MailTo),
+    Image(Image),
+    InterWikiNameUrl(InterWikiNameUrl),
+    PageLink(PageLink),
+    SpecialChar(SpecialChar),
+    NewLine,
+}
+#[derive(Debug)]
+pub struct InlinePlugin {
+    plugin_name: String,
+    parameter: Option<String>,
+    body: Option<Vec<InlineElement>>,
+}
+#[derive(Debug)]
+pub struct Footnote {
+    contents: Vec<InlineElement>,
+}
+#[derive(Debug)]
+pub struct Link {
+    url: String,
+    caption: Vec<InlineElement>,
+}
+#[derive(Debug)]
+pub struct InterWikiUrl {
+    url: String,
+    caption: Vec<InlineElement>,
+}
+#[derive(Debug)]
+pub struct MailTo {
+    address: String,
+    caption: Vec<InlineElement>,
+}
+#[derive(Debug)]
+pub struct Image {
+    src: String,
+    alt: String,
+}
+#[derive(Debug)]
+pub struct InterWikiNameUrl {
+    destination: InterWikiDestination,
+    anchor: Option<String>,
+    name: String,
+    caption: Vec<InlineElement>,
+}
+#[derive(Debug)]
+pub enum InterWikiDestination {
+    Myself {
+        page_name: String,
+    },
+    Other {
+        base_url: Option<String>, // If not exists, it indicates the wiki itself
+        param: String,
+        opt: String,
+    },
+}
+#[derive(Debug, derive_more::From)]
+pub enum SpecialChar {
+    NamedEntity(&'static Entity),
+    Char(char),
+    ReplacementCharacter,
 }
 
-fn make_link(text: Cow<str>) -> Cow<str> {
+fn make_link(text: Cow<str>, config: &Config) -> Vec<InlineElement> {
     let text = text.into_owned();
-    let _res = pcre!(
+    pcre!(
         r#"""
             ( # Link_plugin (1)
                 &
@@ -731,44 +818,270 @@ fn make_link(text: Cow<str>) -> Cow<str> {
     )
     .with(|pattern| {
         let mut res: Vec<InlineElement> = Vec::new();
-        let mut pos = 0;
-        for groups in pattern.borrow_mut().matches(&text) {
-            if pos < groups.group_start(0) {
-                let (s, t) = (pos, groups.group_start(0));
-                res.push(text[s..t].to_owned().into());
-                pos = groups.group_end(0);
-            }
-            if groups.group_opt(1).is_some() {
-                let _plugin_name = groups.group(2).to_owned();
-                let _parameter = groups.group_opt(3).map(str::to_owned);
-                let _body = groups.group_opt(4).map(str::to_owned);
+        for groups in pattern.borrow_mut().matches(&text).match_components(&text) {
+            let groups = match groups {
+                MatchComponent::Match(m) => m,
+                MatchComponent::Between(str) => {
+                    res.push(str.to_owned().into());
+                    continue;
+                }
+            };
+            if let Some(group) = groups.group_opt(1) {
+                // Link_plugin
+                let plugin_name = groups.group(2).to_owned();
+                let parameter = groups.group_opt(3).map(str::to_owned);
+                let body = groups.group_opt(4).map(|s| make_link(s.into(), config));
+                if exist_plugin_inline(&plugin_name) {
+                    let parsed = InlinePlugin {
+                        plugin_name,
+                        parameter,
+                        body,
+                    };
+                    res.push(parsed.into());
+                } else {
+                    res.extend(make_line_rules(group));
+                }
             } else if groups.group_opt(6).is_some() {
-                let _body = groups.group(7).to_owned();
+                // Link_note
+                let body = groups.group(7).to_owned();
+                let contents = make_link(body.into(), config);
+                res.push(Footnote { contents }.into());
             } else if groups.group_opt(8).is_some() {
-                let _alias = groups.group_opt(10).map(str::to_owned);
-                let _url = groups.group(11).to_owned();
+                // Link_url
+                let alias = groups.group_opt(10);
+                let url = groups.group(11).to_owned();
+                let caption =
+                    alias.map_or_else(Vec::new, |alias| parse_alias(url.to_owned(), alias, config));
+                res.push(Link { caption, url }.into());
             } else if groups.group_opt(12).is_some() {
-                let _url = groups.group(13).to_owned();
-                let _alias = groups.group(14).to_owned();
+                // Link_url_interwiki
+                let url = groups.group(13).to_owned();
+                let alias = groups.group(14);
+                let caption = parse_alias(url.to_owned(), alias, config);
+                res.push(InterWikiUrl { url, caption }.into());
             } else if groups.group_opt(15).is_some() {
-                let _alias = groups.group_opt(16).map(str::to_owned);
-                let _mailto = groups.group(17).to_owned();
+                // Link_mailto
+                let alias = groups.group_opt(16);
+                let mailto = groups.group(17).to_owned();
+                let caption = alias.map_or_else(Vec::new, |alias| {
+                    parse_alias(mailto.to_owned(), alias, config)
+                });
+                let parsed = MailTo {
+                    caption,
+                    address: mailto,
+                };
+                res.push(parsed.into());
             } else if groups.group_opt(18).is_some() {
-                let _alias = groups.group_opt(19).map(str::to_owned);
-                let _interwiki = groups.group(21).to_owned();
-                let _param = groups.group(22).to_owned();
-            } else if groups.group_opt(24).is_some() {
-                let _alias = groups.group_opt(25).map(str::to_owned);
-                let _page_name = groups.group(27).to_owned();
-                let _anchor = groups.group_opt(28).map(str::to_owned);
+                // Link_interwikiname
+                let alias = groups.group_opt(19);
+                let name = groups.group(21).to_owned();
+                let param = groups.group(22).to_owned();
+                let (param, anchor) = if let Some(captures) =
+                    regex!(r"^([^#]+)(#[A-Za-z][\w-]*)$").captures(&param)
+                {
+                    (
+                        captures.get(1).unwrap().as_str().to_owned(),
+                        captures.get(2).map(|x| x.as_str()),
+                    )
+                } else {
+                    (param, None)
+                };
+                let caption = alias.map_or_else(Vec::new, |alias| {
+                    parse_alias(name.clone() + ":" + &param, alias, config)
+                });
+                let destination = get_interwiki_url(&name, &param)
+                    .unwrap_or(InterWikiDestination::Myself { page_name: param });
+                let parsed = InterWikiNameUrl {
+                    destination,
+                    anchor: anchor.map(str::to_owned),
+                    name,
+                    caption,
+                };
+                res.push(parsed.into());
+            } else if let Some(group) = groups.group_opt(24) {
+                // Link_bracketname
+                let alias = groups.group_opt(25).map(str::to_owned);
+                let name = groups.group(27).to_owned();
+                let anchor = groups.group_opt(28).map(str::to_owned);
+                if name.is_empty() && anchor.as_ref().map_or(true, |s| s.is_empty()) {
+                    res.extend(make_line_rules(group));
+                } else if name.is_empty()
+                    // not wikiname
+                    || pcre!(r"^(?:[A-Z][a-z]+){2,}(?!\w)$" => exec(&name)).is_none()
+                {
+                    // TODO [compl] if the page does not exist, it should return plain text instead
+                    // TODO [compl] update name with absolute name
+                    let alias = if alias.as_ref().map_or(true, |x| x.is_empty()) {
+                        Some(if let Some(anchor) = &anchor {
+                            name.clone() + anchor
+                        } else {
+                            name.clone()
+                        })
+                    } else {
+                        alias
+                    };
+                    let contents = alias
+                        .map_or_else(Vec::new, |alias| parse_alias(name.clone(), &alias, config));
+                    res.push(make_page_link(name, contents, anchor, false).into());
+                }
             } else if groups.group_opt(29).is_some() {
-                let _wikiname = groups.group_opt(30).map(str::to_owned);
-            }
+                // Link_wikiname
+                let wikiname = groups.group(30).to_owned();
+                res.push(
+                    make_page_link(wikiname.clone(), vec![wikiname.into()], None, false).into(),
+                );
+            } else {
+                unreachable!("The regex has either of these groups")
+            };
         }
         res
-    });
+    })
+}
+fn exist_plugin_inline(_plugin_name: &str) -> bool {
+    true
+}
+fn parse_alias(name: String, alias: &str, config: &Config) -> Vec<InlineElement> {
+    if config.disable_inline_image_from_uri
+        && is_url(alias)
+        && regex!(r"\.(gif|png|jpe?g)$").is_match(alias)
+    {
+        let parsed = Image {
+            src: alias.to_owned(),
+            alt: name,
+        };
+        vec![parsed.into()]
+    } else if !alias.is_empty() {
+        // $page is an external information, so we don't
+        // TODO make_link converts plugin, but here it shouldn't
+        // TODO make_line_rules
+        make_link(alias.into(), config)
+    } else {
+        vec![]
+    }
+}
+fn is_url(str: &str) -> bool {
+    // assume $only_http = FALSE
+    // Unnecessary escape sequences are removed
+    regex!(r"^(https?|ftp|news)(://[-_.!~*'()a-zA-Z0-9;/?:@&=+$,%#]*)$").is_match(str)
+}
+fn get_interwiki_url(_name: &str, _param: &str) -> Option<InterWikiDestination> {
+    // TODO: [prio:low] implement
+    // Note that taiko wiki does not have contents in InterWikiName,
+    // so this does not affect to the parse result.
+    None
+}
+fn make_line_rules(str: &str) -> impl Iterator<Item = InlineElement> + '_ {
+    let regex = regex!(
+        r"&(?:#(?P<entity_decimal>[0-9]+)|#x(?P<entity_hex>[0-9a-f]+)|(?P<entity_named>A(?:Elig|acute|circ|grave|lpha|ring|tilde|uml)|Beta|C(?:cedil|hi)|D(?:agger|elta)|E(?:TH|acute|circ|grave|psilon|ta|uml)|Gamma|I(?:acute|circ|grave|ota|uml)|Kappa|Lambda|Mu|N(?:tilde|u)|O(?:Elig|acute|circ|grave|m(?:ega|icron)|slash|tilde|uml)|P(?:hi|i|rime|si)|Rho|S(?:caron|igma)|T(?:HORN|au|heta)|U(?:acute|circ|grave|psilon|uml)|Xi|Y(?:acute|uml)|Zeta|a(?:acute|c(?:irc|ute)|elig|grave|l(?:efsym|pha)|mp|n(?:d|g)|pos|ring|symp|tilde|uml)|b(?:dquo|eta|rvbar|ull)|c(?:ap|cedil|e(?:dil|nt)|hi|irc|lubs|o(?:ng|py)|rarr|u(?:p|rren))|d(?:Arr|a(?:gger|rr)|e(?:g|lta)|i(?:ams|vide))|e(?:acute|circ|grave|m(?:pty|sp)|nsp|psilon|quiv|t(?:a|h)|u(?:ml|ro)|xist)|f(?:nof|orall|ra(?:c(?:1(?:2|4)|34)|sl))|g(?:amma|e|t)|h(?:Arr|arr|e(?:arts|llip))|i(?:acute|circ|excl|grave|mage|n(?:fin|t)|ota|quest|sin|uml)|kappa|l(?:Arr|a(?:mbda|ng|quo|rr)|ceil|dquo|e|floor|o(?:wast|z)|rm|s(?:aquo|quo)|t)|m(?:acr|dash|i(?:cro|ddot|nus)|u)|n(?:abla|bsp|dash|e|i|ot(?:in)?|sub|tilde|u)|o(?:acute|circ|elig|grave|line|m(?:ega|icron)|plus|r(?:d(?:f|m))?|slash|ti(?:lde|mes)|uml)|p(?:ar(?:a|t)|er(?:mil|p)|hi|i(?:v)?|lusmn|ound|r(?:ime|o(?:d|p))|si)|quot|r(?:Arr|a(?:dic|ng|quo|rr)|ceil|dquo|e(?:al|g)|floor|ho|lm|s(?:aquo|quo))|s(?:bquo|caron|dot|ect|hy|i(?:gma(?:f)?|m)|pades|u(?:b(?:e)?|m|p(?:1|2|3|e)?)|zlig)|t(?:au|h(?:e(?:re4|ta(?:sym)?)|insp|orn)|i(?:lde|mes)|rade)|u(?:Arr|a(?:cute|rr)|circ|grave|ml|psi(?:h|lon)|uml)|weierp|xi|y(?:acute|en|uml)|z(?:eta|w(?:j|nj))))|(?P<newline>\r)"
+    );
+    static ENTITY_MAP: Lazy<HashMap<&str, &Entity>> =
+        once_cell::sync::Lazy::new(|| ENTITIES.iter().map(|e| (e.entity, e)).collect());
+    regex
+        .captures_iter(str)
+        .match_components(str)
+        .map(|m| match m {
+            MatchComponent::Between(s) => s.to_owned().into(),
+            MatchComponent::Match(captures) => {
+                let as_charcode = |a: Result<u32, _>| match html_charcode(a.unwrap_or(u32::MAX)) {
+                    Ok(c) => InlineElement::SpecialChar(c.into()),
+                    Err(HtmlCharcodeError::Replace) => {
+                        InlineElement::SpecialChar(SpecialChar::ReplacementCharacter)
+                    }
+                    Err(HtmlCharcodeError::AsIs) => {
+                        captures.get(0).unwrap().as_str().to_owned().into()
+                    }
+                };
+                if let Some(entity_decimal) = captures.name("entity_decimal") {
+                    as_charcode(entity_decimal.as_str().parse())
+                } else if let Some(entity_hex) = captures.name("entity_hex") {
+                    as_charcode(u32::from_str_radix(entity_hex.as_str(), 16))
+                } else if let Some(entity_named) = captures.name("entity_named") {
+                    let entity = *ENTITY_MAP.get(entity_named.as_str()).unwrap();
+                    InlineElement::SpecialChar(entity.into())
+                } else if captures.name("newline").is_some() {
+                    InlineElement::NewLine
+                } else {
+                    unreachable!("Guarded by regex")
+                }
+            }
+        })
+}
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum HtmlCharcodeError {
+    Replace,
+    AsIs,
+}
+fn html_charcode(charcode: u32) -> Result<char, HtmlCharcodeError> {
+    use HtmlCharcodeError::*;
+    match charcode {
+        0 => Err(Replace),                                   // null
+        x if x > 0x10FFFF => Err(Replace),                   // replace
+        x if (0xD800..=0xDFFF).contains(&x) => Err(Replace), // Surrogate
+        x if (0xFDD0..=0xFDEF).contains(&x) => Err(Replace), // Non-character
+        0xFFFE | 0xFFFF | 0x1FFFE | 0x1FFFF | 0x2FFFE | 0x2FFFF | 0x3FFFE | 0x3FFFF | 0x4FFFE
+        | 0x4FFFF | 0x5FFFE | 0x5FFFF | 0x6FFFE | 0x6FFFF | 0x7FFFE | 0x7FFFF | 0x8FFFE
+        | 0x8FFFF | 0x9FFFE | 0x9FFFF | 0xAFFFE | 0xAFFFF | 0xBFFFE | 0xBFFFF | 0xCFFFE
+        | 0xCFFFF | 0xDFFFE | 0xDFFFF | 0xEFFFE | 0xEFFFF | 0xFFFFE | 0xFFFFF | 0x10FFFE
+        | 0x10FFFF => Err(Replace), // Non-character
+        0x0D => Err(AsIs),
+        x if (0x00..=0x1F).contains(&x) || (0x7F..0x9F).contains(&x) => {
+            Ok(char::from_u32(match x {
+                // ASCII control sequence
+                0x09 | 0x0A | 0x0C | 0x0D | 0x20 => x, // ASCII whitespace
+                0x80 => 0x20AC,
+                0x82 => 0x201A,
+                0x83 => 0x0192,
+                0x84 => 0x201E,
+                0x85 => 0x2026,
+                0x86 => 0x2020,
+                0x87 => 0x2021,
+                0x88 => 0x02C6,
+                0x89 => 0x2030,
+                0x8A => 0x0160,
+                0x8B => 0x2039,
+                0x8C => 0x0152,
+                0x8E => 0x017D,
+                0x91 => 0x2018,
+                0x92 => 0x2019,
+                0x93 => 0x201C,
+                0x94 => 0x201D,
+                0x95 => 0x2022,
+                0x96 => 0x2013,
+                0x97 => 0x2014,
+                0x98 => 0x02DC,
+                0x99 => 0x2122,
+                0x9A => 0x0161,
+                0x9B => 0x203A,
+                0x9C => 0x0153,
+                0x9E => 0x017E,
+                0x9F => 0x0178,
+                _ => return Err(AsIs),
+            })
+            .unwrap())
+        }
+        x => Ok(char::from_u32(x).unwrap()),
+    }
+}
 
-    "".into()
+#[derive(Debug)]
+pub struct PageLink {
+    page: String,
+    contents: Vec<InlineElement>,
+    anchor: Option<String>,
+    is_auto_link: bool,
+}
+fn make_page_link(
+    page: String,
+    contents: Vec<InlineElement>,
+    anchor: Option<String>,
+    is_auto_link: bool,
+) -> PageLink {
+    PageLink {
+        page,
+        contents,
+        anchor,
+        is_auto_link,
+    }
 }
 
 /// Strips `c` from `s` as much as possible, but at most `n` times.
@@ -800,7 +1113,7 @@ fn trim_cow<'a>(str: &Cow<'a, str>) -> Cow<'a, str> {
 
 #[cfg(test)]
 mod test {
-    use crate::pukiwiki_parser::parser::as_numeric;
+    use crate::pukiwiki_parser::parser::{as_numeric, is_url};
 
     #[test]
     fn test_strip_prefix_n() {
@@ -840,5 +1153,13 @@ mod test {
         assert_eq!(as_numeric(" 3 pigs"), None);
         assert_eq!(as_numeric("There are 5 dogs"), None);
         assert_eq!(as_numeric("5 years"), None);
+    }
+
+    #[test]
+    fn test_is_url() {
+        assert!(is_url("https://example.com/example.png"));
+        assert!(!is_url("https://example.com/example.png "));
+        assert!(!is_url("   https://example.com/example.png"));
+        assert!(!is_url("this_is_not_url"));
     }
 }

@@ -1,4 +1,3 @@
-pub mod pcre_ext;
 pub mod regex_ext;
 
 pub mod either_ext;
