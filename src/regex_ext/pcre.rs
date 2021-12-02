@@ -1,12 +1,11 @@
 #[macro_export]
 macro_rules! pcre {
     ($pattern: expr $(, $($flags: ident)*)?) => {{
-        use std::cell::RefCell;
         use pcre::Pcre;
         thread_local! {
-            static PATTERN: RefCell<Pcre> = {
+            static PATTERN: Pcre = {
                 let flags = $crate::flags!($($($flags)*)?);
-                RefCell::new(Pcre::compile_with_options($pattern, &flags).unwrap())
+                Pcre::compile_with_options($pattern, &flags).unwrap()
             };
         }
         PATTERN
@@ -14,7 +13,7 @@ macro_rules! pcre {
 
     ($pattern: expr $(, $($flags: ident)*)? => $method: ident($($args: expr),*)) => {{
         let pattern = &$crate::pcre!($pattern $(, $($flags)*)?);
-        pattern.with(|pat| pat.borrow_mut().$method($($args),*))
+        pattern.with(|pat| pat.$method($($args),*))
     }};
 }
 
@@ -94,7 +93,7 @@ mod test {
     fn test_match_ext() {
         let s = "This is a test.";
         let x = {
-            let mut regex = Pcre::compile(r"\w+(z)?").unwrap();
+            let regex = Pcre::compile(r"\w+(z)?").unwrap();
             let res = regex.exec(s).unwrap();
             assert_eq!(res.group_opt(0), Some("This"));
             assert_eq!(res.group_opt(1), None);

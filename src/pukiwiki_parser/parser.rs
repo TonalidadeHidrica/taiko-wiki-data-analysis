@@ -818,7 +818,7 @@ fn make_link(text: Cow<str>, config: &Config) -> Vec<InlineElement> {
     )
     .with(|pattern| {
         let mut res: Vec<InlineElement> = Vec::new();
-        for groups in pattern.borrow_mut().matches(&text).match_components(&text) {
+        for groups in pattern.matches(&text).match_components(&text) {
             let groups = match groups {
                 MatchComponent::Match(m) => m,
                 MatchComponent::Between(str) => {
@@ -901,27 +901,30 @@ fn make_link(text: Cow<str>, config: &Config) -> Vec<InlineElement> {
             } else if let Some(group) = groups.group_opt(24) {
                 // Link_bracketname
                 let alias = groups.group_opt(25).map(str::to_owned);
-                let name = groups.group(27).to_owned();
+                let name = groups.group_opt(27).map(str::to_owned);
                 let anchor = groups.group_opt(28).map(str::to_owned);
-                if name.is_empty() && anchor.as_ref().map_or(true, |s| s.is_empty()) {
+                let name_ref = name.as_deref().unwrap_or("");
+                let name_is_empty = name.as_ref().map_or(true, |s| s.is_empty());
+                if name_is_empty && anchor.as_ref().map_or(true, |s| s.is_empty()) {
                     res.extend(make_line_rules(group));
-                } else if name.is_empty()
+                } else if name_is_empty
                     // not wikiname
-                    || pcre!(r"^(?:[A-Z][a-z]+){2,}(?!\w)$" => exec(&name)).is_none()
+                    || pcre!(r"^(?:[A-Z][a-z]+){2,}(?!\w)$" => exec(name_ref)).is_none()
                 {
                     // TODO [compl] if the page does not exist, it should return plain text instead
                     // TODO [compl] update name with absolute name
                     let alias = if alias.as_ref().map_or(true, |x| x.is_empty()) {
-                        Some(if let Some(anchor) = &anchor {
-                            name.clone() + anchor
+                        if let Some(anchor) = &anchor {
+                            Some(name.as_ref().cloned().unwrap_or_default() + anchor)
                         } else {
                             name.clone()
-                        })
+                        }
                     } else {
                         alias
                     };
-                    let contents = alias
-                        .map_or_else(Vec::new, |alias| parse_alias(name.clone(), &alias, config));
+                    let contents = alias.map_or_else(Vec::new, |alias| {
+                        parse_alias(name.as_ref().cloned().unwrap_or_default(), &alias, config)
+                    });
                     res.push(make_page_link(name, contents, anchor, false).into());
                 }
             } else if groups.group_opt(29).is_some() {
@@ -1065,19 +1068,19 @@ fn html_charcode(charcode: u32) -> Result<char, HtmlCharcodeError> {
 
 #[derive(Debug)]
 pub struct PageLink {
-    page: String,
+    page: Option<String>,
     contents: Vec<InlineElement>,
     anchor: Option<String>,
     is_auto_link: bool,
 }
 fn make_page_link(
-    page: String,
+    page: impl Into<Option<String>>,
     contents: Vec<InlineElement>,
     anchor: Option<String>,
     is_auto_link: bool,
 ) -> PageLink {
     PageLink {
-        page,
+        page: page.into(),
         contents,
         anchor,
         is_auto_link,

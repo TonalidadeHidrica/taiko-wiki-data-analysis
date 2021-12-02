@@ -775,7 +775,7 @@ checksum = "dea0c0405123bba743ee3f91f49b1c7cfb684eef0da0a50110f758ccf24cdff0"
 [[package]]
 name = "libpcre-sys"
 version = "0.2.2"
-source = "git+https://github.com/TonalidadeHidrica/rust-pcre?branch=pcre-v8.31#989bff173a767ebe12fcbaa509e66b8d50cd9a42"
+source = "git+https://github.com/TonalidadeHidrica/rust-pcre?branch=pcre-v8.31#65775521d383d445b5ab3707d52b5285647e17a8"
 dependencies = [
  "bzip2",
  "libc",
@@ -1028,7 +1028,7 @@ dependencies = [
 [[package]]
 name = "pcre"
 version = "0.2.3"
-source = "git+https://github.com/TonalidadeHidrica/rust-pcre?branch=pcre-v8.31#989bff173a767ebe12fcbaa509e66b8d50cd9a42"
+source = "git+https://github.com/TonalidadeHidrica/rust-pcre?branch=pcre-v8.31#65775521d383d445b5ab3707d52b5285647e17a8"
 dependencies = [
  "enum-set",
  "libc",
