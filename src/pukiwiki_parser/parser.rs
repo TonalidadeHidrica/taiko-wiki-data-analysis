@@ -2034,6 +2034,21 @@ mod test {
         assert_eq!(caption.len(), 1);
         assert_matches!(&caption[0], IE::InlineToken(IT::Str(s)) if s == "alias");
 
+        // Wiki link
+        let res = make_link("[[リンク>ページ名#anchor]]".into(), &config);
+        let caption = assert_matches!(
+            &res[..],
+            [IE::PageLink(PageLink {
+                page: Some(page),
+                contents,
+                anchor: Some(anchor),
+                is_auto_link: false
+            })]
+            if page == "ページ名" && anchor == "#anchor"
+            => contents
+        );
+        assert_matches!(&caption[..], [IE::InlineToken(IT::Str(s))] if s == "リンク");
+
         // Wikiname
         let res = make_link("WikiName".into(), &config);
         let contents = assert_matches!(

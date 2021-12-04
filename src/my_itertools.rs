@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, iter::Peekable, marker::PhantomData, ops::Deref};
+use std::{iter::Peekable, marker::PhantomData, ops::Deref};
 
 use itertools::Itertools;
 
