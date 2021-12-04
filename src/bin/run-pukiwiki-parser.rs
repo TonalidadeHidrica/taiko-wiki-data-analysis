@@ -26,7 +26,7 @@ fn run(file: impl Into<PathBuf>, quiet: bool) -> anyhow::Result<()> {
     let (str, encoding, replace) = EUC_JP.decode(&buf);
     if encoding != EUC_JP || replace {
         eprintln!("Malformed input in {:?}", file);
-        return Ok(());   // Actually I want to return error, but who cares
+        return Ok(()); // Actually I want to return error, but who cares
     }
     let parsed = parse(&Config::taiko_wiki(), &str);
     if !quiet {
