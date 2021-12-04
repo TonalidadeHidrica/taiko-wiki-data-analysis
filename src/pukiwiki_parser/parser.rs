@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::HashMap, iter::Peekable, ops::Range};
 
 use either::*;
 use entities::{Entity, ENTITIES};
-use itertools::Itertools;
+use itertools::{zip, Itertools};
 use loop_unwrap::unwrap_break;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -1047,6 +1047,8 @@ fn make_line_rules(str: &str) -> impl Iterator<Item = InlineElement> + '_ {
     let size_blocks = get_size_blocks(str, &color_blocks);
     let color_swithces = get_color_switches(str, &color_blocks, &size_blocks);
     let _size_switches = get_size_switches(str, &color_blocks, &size_blocks, &color_swithces);
+    let (inses, dels) = get_format_ranges(str, regex!("%{2,}"));
+    let (ems, strongs) = get_format_ranges(str, regex!("'{2,}"));
 
     static ENTITY_MAP: Lazy<HashMap<&str, &Entity>> =
         once_cell::sync::Lazy::new(|| ENTITIES.iter().map(|e| (e.entity, e)).collect());
@@ -1211,6 +1213,33 @@ fn get_size_switches(
     get_format_switch(str, "SIZE(", delim_iter, paren_iter)
 }
 
+struct FormatRange {
+    start: Range<usize>,
+    end: Range<usize>,
+}
+fn get_format_ranges(str: &str, regex: &Regex) -> (Vec<FormatRange>, Vec<FormatRange>) {
+    let mut positions = regex
+        .find_iter(str)
+        .map(|x| x.start()..x.end())
+        .collect_vec();
+    let mut res = (vec![], vec![]);
+    for (res, len) in zip([&mut res.0, &mut res.1], [3, 2]) {
+        for i in 1..positions.len() - 1 {
+            let (bef, aft) = positions.split_at_mut(i);
+            let (bef, aft) = (bef.last_mut().unwrap(), aft.first_mut().unwrap()); // Always exist
+            if bef.len() >= len && aft.len() >= len {
+                res.push(FormatRange {
+                    start: bef.end - len..bef.end,
+                    end: aft.start..aft.start + len,
+                });
+                bef.end -= len;
+                aft.start += len;
+            }
+        }
+    }
+    res
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum HtmlCharcodeError {
     Replace,
@@ -1361,8 +1390,9 @@ mod test {
     use crate::pukiwiki_parser::parser::{
         as_numeric, get_color_switches, get_size_blocks, get_size_switches, is_url,
     };
+    use crate::regex;
 
-    use super::get_color_blocks;
+    use super::{get_color_blocks, get_format_ranges};
 
     #[test]
     fn test_strip_prefix_n() {
@@ -1427,6 +1457,16 @@ mod test {
             use ::itertools::Itertools;
             assert_eq!(
                 $lhs.into_iter().map(|x| (x.kw, x.delim, x.end)).collect_vec(),
+                vec![$($rhs),*]
+            );
+        }};
+    }
+
+    macro_rules! assert_ranges {
+        ($lhs: expr, [$($rhs: expr),* $(,)?]) => {{
+            use ::itertools::Itertools;
+            assert_eq!(
+                $lhs.into_iter().map(|x| (x.start, x.end)).collect_vec(),
                 vec![$($rhs),*]
             );
         }};
@@ -1548,5 +1588,45 @@ mod test {
         assert_blocks!(size_blocks, [(11..16, 29..31, 32..33)]);
         assert_switches!(color_switches, [(5..11, 33..35, 40), (40..46, 50..52, 64)]);
         assert_switches!(size_switches, [(0..5, 36..38, 54), (54..59, 61..63, 64)]);
+    }
+
+    #[test]
+    fn test_get_format_ranges() {
+        let regex = regex!(r"%{2,}");
+
+        //                   1         2         3         4         5         6         7         8
+        //         012345678901234567890123456789012345678901234567890123456789012345678901234567890
+        let str = "  %%% %%%    %% %%";
+        let (tri, dva) = get_format_ranges(str, regex);
+        assert_ranges!(tri, [(2..5, 6..9)]);
+        assert_ranges!(dva, [(13..15, 16..18)]);
+
+        //                   1         2         3         4         5         6         7         8
+        //         012345678901234567890123456789012345678901234567890123456789012345678901234567890
+        let str = "  %%%%%   %%%%%%%  %%%%";
+        let (tri, dva) = get_format_ranges(str, regex);
+        assert_ranges!(tri, [(4..7, 10..13), (14..17, 19..22)]);
+        assert_ranges!(dva, []);
+
+        //                   1         2         3         4         5         6         7         8
+        //         012345678901234567890123456789012345678901234567890123456789012345678901234567890
+        let str = "  %%%%%   %%%%%%%  %%%%%";
+        let (tri, dva) = get_format_ranges(str, regex);
+        assert_ranges!(tri, [(4..7, 10..13), (14..17, 19..22)]);
+        assert_ranges!(dva, [(2..4, 22..24)]);
+
+        //                   1         2         3         4         5         6         7         8
+        //         012345678901234567890123456789012345678901234567890123456789012345678901234567890
+        let str = "  %%%%%   %%%%%%%%  %%%%%";
+        let (tri, dva) = get_format_ranges(str, regex);
+        assert_ranges!(tri, [(4..7, 10..13), (15..18, 20..23)]);
+        assert_ranges!(dva, [(2..4, 13..15)]);
+
+        //                   1         2         3         4         5         6         7         8
+        //         012345678901234567890123456789012345678901234567890123456789012345678901234567890
+        let str = "%% %%% %% %%%";
+        let (tri, dva) = get_format_ranges(str, regex);
+        assert_ranges!(tri, [(3..6, 10..13)]);
+        assert_ranges!(dva, [(0..2, 17..19)]);
     }
 }
