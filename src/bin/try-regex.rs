@@ -7,7 +7,7 @@ fn main() {
     let pattern = r"\w+";
     dbg!(Regex::new(pattern).unwrap().captures(haystack));
 
-    let mut regex = Pcre::compile_with_options(pattern, &EnumSet::new()).unwrap();
+    let regex = Pcre::compile_with_options(pattern, &EnumSet::new()).unwrap();
     let exec = regex.exec(haystack).unwrap();
     dbg!(exec.group(0));
 }
