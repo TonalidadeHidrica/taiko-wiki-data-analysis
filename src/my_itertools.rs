@@ -1,3 +1,11 @@
+use std::{
+    borrow::Borrow,
+    iter::Peekable,
+    ops::{Deref, Range},
+};
+
+use itertools::Itertools;
+
 pub trait MyItertools: Iterator {
     fn split_first(mut self) -> (Option<Self::Item>, Self)
     where
@@ -13,6 +21,19 @@ pub trait MyItertools: Iterator {
         P: FnMut(&Self::Item) -> bool,
     {
         TakeUntil::new(self, predicate)
+    }
+
+    #[inline]
+    fn remove_overlapping<T, J>(self, filter: J) -> RemoveOverlapping<Self, J::IntoIter>
+    where
+        Self: Sized,
+        J: IntoIterator,
+        RemoveOverlapping<Self, J::IntoIter>: Iterator<Item = Range<T>>,
+    {
+        RemoveOverlapping {
+            it: self,
+            filter: filter.into_iter().peekable(),
+        }
     }
 }
 
@@ -54,22 +75,138 @@ where
     }
 }
 
-#[test]
-fn test_take_first() {
+pub struct RemoveOverlapping<I, J>
+where
+    J: Iterator,
+{
+    it: I,
+    filter: Peekable<J>,
+    // _phnatom: PhantomData<fn() -> (T, B)>,
+}
+impl<T, B, I, J> Iterator for RemoveOverlapping<I, J>
+where
+    I: Iterator<Item = Range<T>>,
+    J: Iterator<Item = B>,
+    B: Borrow<Range<T>>,
+    T: Ord,
+    T: std::fmt::Debug,
+{
+    type Item = Range<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.it.find(|subject| {
+            self.filter
+                .peeking_find(|next| subject.start < next.borrow().end)
+                .map_or(true, |next| subject.end <= next.deref().borrow().start)
+        })
+    }
+}
+impl<I, J> Clone for RemoveOverlapping<I, J>
+where
+    I: Clone,
+    J: Iterator,
+    Peekable<J>: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            it: self.it.clone(),
+            filter: self.filter.clone(),
+        }
+    }
+}
+
+pub trait PeekableExt<T>: Sized {
+    // fn peeking_find<P>(&mut self, predicate: P) -> Option<Peeked<T, Self>>
+    fn peeking_find<P>(&mut self, predicate: P) -> Option<&T>
+    where
+        Self: Iterator<Item = T>,
+        P: FnMut(&T) -> bool;
+}
+
+impl<T, I> PeekableExt<T> for Peekable<I>
+where
+    I: Iterator<Item = T>,
+{
+    // fn peeking_find<P>(&mut self, mut predicate: P) -> Option<Peeked<T, Self>>
+    fn peeking_find<P>(&mut self, mut predicate: P) -> Option<&T>
+    where
+        Self: Iterator<Item = T>,
+        P: FnMut(&T) -> bool,
+    {
+        self.peeking_take_while(|x| !predicate(x)).last();
+        // self.peek().map(|item| Peeked { item, iterator: self })
+        self.peek()
+    }
+}
+
+pub struct Peeked<'a, T, I> {
+    item: &'a T,
+    iterator: &'a mut I,
+}
+impl<'a, T, I> Peeked<'a, T, I>
+where
+    I: Iterator<Item = T>,
+{
+    pub fn pop(this: Self) -> T {
+        this.iterator.next().unwrap()
+    }
+}
+impl<'a, T, I> Deref for Peeked<'a, T, I> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.item
+    }
+}
+
+#[cfg(test)]
+mod test {
     use itertools::Itertools;
 
-    let vec = vec![3, 4, 5];
-    let (first, remain) = vec.iter().split_first();
-    assert_eq!(first, Some(&3));
-    assert_eq!(remain.collect_vec(), vec![&4, &5]);
+    use crate::my_itertools::{MyItertools, PeekableExt};
 
-    let vec = vec![6];
-    let (first, remain) = vec.iter().split_first();
-    assert_eq!(first, Some(&6));
-    assert!(remain.collect_vec().is_empty());
+    #[test]
+    fn test_take_first() {
+        let vec = vec![3, 4, 5];
+        let (first, remain) = vec.iter().split_first();
+        assert_eq!(first, Some(&3));
+        assert_eq!(remain.collect_vec(), vec![&4, &5]);
 
-    let vec: Vec<i32> = vec![];
-    let (first, remain) = vec.iter().split_first();
-    assert_eq!(first, None);
-    assert!(remain.collect_vec().is_empty());
+        let vec = vec![6];
+        let (first, remain) = vec.iter().split_first();
+        assert_eq!(first, Some(&6));
+        assert!(remain.collect_vec().is_empty());
+
+        let vec: Vec<i32> = vec![];
+        let (first, remain) = vec.iter().split_first();
+        assert_eq!(first, None);
+        assert!(remain.collect_vec().is_empty());
+    }
+
+    #[test]
+    fn test_remove_overlapping() {
+        let v = vec![0..4, 13..16, 21..25, 30..31, 37..39, 42..43, 50..55];
+        let u = vec![10..14, 23..28, 28..33, 33..37, 43..50];
+        let res = v
+            .clone()
+            .into_iter()
+            .remove_overlapping(u.iter())
+            .collect_vec();
+        let expect = vec![0..4, 37..39, 42..43, 50..55];
+        assert_eq!(&res, &expect);
+
+        let res = v.into_iter().remove_overlapping(u).collect_vec();
+        assert_eq!(&res, &expect);
+    }
+
+    #[test]
+    fn test_peeking_find() {
+        let mut it = vec![3, 1, 4, 7, 5, 9, 2, 6].into_iter().peekable();
+        assert_eq!(it.peeking_find(|x| x % 2 == 0).map(|x| &*x), Some(&4));
+        assert_eq!(it.peek(), Some(&4));
+        assert_eq!(it.peeking_find(|x| x % 2 == 0).map(|x| &*x), Some(&4));
+        assert_eq!(it.peek(), Some(&4));
+        assert_eq!(it.next(), Some(4));
+        assert_eq!(it.peek(), Some(&7));
+    }
 }

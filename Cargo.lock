@@ -793,6 +793,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "loop_unwrap"
+version = "0.2.0"
+
+[[package]]
 name = "mac"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1582,6 +1586,7 @@ dependencies = [
  "indicatif",
  "itertools",
  "lazy_static",
+ "loop_unwrap",
  "num-derive",
  "num-traits",
  "once_cell",

@@ -1,14 +1,15 @@
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::HashMap, iter::Peekable, ops::Range};
 
 use either::*;
 use entities::{Entity, ENTITIES};
 use itertools::Itertools;
+use loop_unwrap::unwrap_break;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::{
     either_ext::{into_common_2, EitherExt},
-    my_itertools::MyItertools,
+    my_itertools::{MyItertools, PeekableExt},
     pcre, regex,
     regex_ext::{
         iter::{MatchComponent, MatchIterator},
@@ -975,8 +976,78 @@ fn get_interwiki_url(_name: &str, _param: &str) -> Option<InterWikiDestination> 
 }
 fn make_line_rules(str: &str) -> impl Iterator<Item = InlineElement> + '_ {
     let regex = regex!(
-        r"&(?:#(?P<entity_decimal>[0-9]+)|#x(?P<entity_hex>[0-9a-f]+)|(?P<entity_named>A(?:Elig|acute|circ|grave|lpha|ring|tilde|uml)|Beta|C(?:cedil|hi)|D(?:agger|elta)|E(?:TH|acute|circ|grave|psilon|ta|uml)|Gamma|I(?:acute|circ|grave|ota|uml)|Kappa|Lambda|Mu|N(?:tilde|u)|O(?:Elig|acute|circ|grave|m(?:ega|icron)|slash|tilde|uml)|P(?:hi|i|rime|si)|Rho|S(?:caron|igma)|T(?:HORN|au|heta)|U(?:acute|circ|grave|psilon|uml)|Xi|Y(?:acute|uml)|Zeta|a(?:acute|c(?:irc|ute)|elig|grave|l(?:efsym|pha)|mp|n(?:d|g)|pos|ring|symp|tilde|uml)|b(?:dquo|eta|rvbar|ull)|c(?:ap|cedil|e(?:dil|nt)|hi|irc|lubs|o(?:ng|py)|rarr|u(?:p|rren))|d(?:Arr|a(?:gger|rr)|e(?:g|lta)|i(?:ams|vide))|e(?:acute|circ|grave|m(?:pty|sp)|nsp|psilon|quiv|t(?:a|h)|u(?:ml|ro)|xist)|f(?:nof|orall|ra(?:c(?:1(?:2|4)|34)|sl))|g(?:amma|e|t)|h(?:Arr|arr|e(?:arts|llip))|i(?:acute|circ|excl|grave|mage|n(?:fin|t)|ota|quest|sin|uml)|kappa|l(?:Arr|a(?:mbda|ng|quo|rr)|ceil|dquo|e|floor|o(?:wast|z)|rm|s(?:aquo|quo)|t)|m(?:acr|dash|i(?:cro|ddot|nus)|u)|n(?:abla|bsp|dash|e|i|ot(?:in)?|sub|tilde|u)|o(?:acute|circ|elig|grave|line|m(?:ega|icron)|plus|r(?:d(?:f|m))?|slash|ti(?:lde|mes)|uml)|p(?:ar(?:a|t)|er(?:mil|p)|hi|i(?:v)?|lusmn|ound|r(?:ime|o(?:d|p))|si)|quot|r(?:Arr|a(?:dic|ng|quo|rr)|ceil|dquo|e(?:al|g)|floor|ho|lm|s(?:aquo|quo))|s(?:bquo|caron|dot|ect|hy|i(?:gma(?:f)?|m)|pades|u(?:b(?:e)?|m|p(?:1|2|3|e)?)|zlig)|t(?:au|h(?:e(?:re4|ta(?:sym)?)|insp|orn)|i(?:lde|mes)|rade)|u(?:Arr|a(?:cute|rr)|circ|grave|ml|psi(?:h|lon)|uml)|weierp|xi|y(?:acute|en|uml)|z(?:eta|w(?:j|nj))))|(?P<newline>\r)"
+        r"(?x)
+        &(?:
+            \#(?P<entity_decimal>[0-9]+)
+            |
+            \#x(?P<entity_hex>[0-9a-f]+)
+            |
+            (?P<entity_named>A(?:Elig|acute|circ|grave|lpha|ring|tilde|uml)|Beta|C(?:cedil|hi)|D(?:agger|elta)|E(?:TH|acute|circ|grave|psilon|ta|uml)|Gamma|I(?:acute|circ|grave|ota|uml)|Kappa|Lambda|Mu|N(?:tilde|u)|O(?:Elig|acute|circ|grave|m(?:ega|icron)|slash|tilde|uml)|P(?:hi|i|rime|si)|Rho|S(?:caron|igma)|T(?:HORN|au|heta)|U(?:acute|circ|grave|psilon|uml)|Xi|Y(?:acute|uml)|Zeta|a(?:acute|c(?:irc|ute)|elig|grave|l(?:efsym|pha)|mp|n(?:d|g)|pos|ring|symp|tilde|uml)|b(?:dquo|eta|rvbar|ull)|c(?:ap|cedil|e(?:dil|nt)|hi|irc|lubs|o(?:ng|py)|rarr|u(?:p|rren))|d(?:Arr|a(?:gger|rr)|e(?:g|lta)|i(?:ams|vide))|e(?:acute|circ|grave|m(?:pty|sp)|nsp|psilon|quiv|t(?:a|h)|u(?:ml|ro)|xist)|f(?:nof|orall|ra(?:c(?:1(?:2|4)|34)|sl))|g(?:amma|e|t)|h(?:Arr|arr|e(?:arts|llip))|i(?:acute|circ|excl|grave|mage|n(?:fin|t)|ota|quest|sin|uml)|kappa|l(?:Arr|a(?:mbda|ng|quo|rr)|ceil|dquo|e|floor|o(?:wast|z)|rm|s(?:aquo|quo)|t)|m(?:acr|dash|i(?:cro|ddot|nus)|u)|n(?:abla|bsp|dash|e|i|ot(?:in)?|sub|tilde|u)|o(?:acute|circ|elig|grave|line|m(?:ega|icron)|plus|r(?:d(?:f|m))?|slash|ti(?:lde|mes)|uml)|p(?:ar(?:a|t)|er(?:mil|p)|hi|i(?:v)?|lusmn|ound|r(?:ime|o(?:d|p))|si)|quot|r(?:Arr|a(?:dic|ng|quo|rr)|ceil|dquo|e(?:al|g)|floor|ho|lm|s(?:aquo|quo))|s(?:bquo|caron|dot|ect|hy|i(?:gma(?:f)?|m)|pades|u(?:b(?:e)?|m|p(?:1|2|3|e)?)|zlig)|t(?:au|h(?:e(?:re4|ta(?:sym)?)|insp|orn)|i(?:lde|mes)|rade)|u(?:Arr|a(?:cute|rr)|circ|grave|ml|psi(?:h|lon)|uml)|weierp|xi|y(?:acute|en|uml)|z(?:eta|w(?:j|nj)))
+        );
+        | (?P<newline> \r)
+
+        # face marks
+        | (?P<face_smile0>      \s:\)       )
+        | (?P<face_bigsmile0>   \s:D        )
+        | (?P<face_huh0>        \s:p        )
+        | (?P<face_huh1>        \s:d        )
+        | (?P<face_oh0>         \sXD        )
+        | (?P<face_oh1>         \sX\(       )
+        | (?P<face_wink0>       \s;\)       )
+        | (?P<face_sad0>        \s;\(       )
+        | (?P<face_sad1>        \s:\(       )
+
+        # face marks (amp)
+        | (?P<face_smile1>      &smile;     )
+        | (?P<face_bigsmile1>   &bigsmile;  )
+        | (?P<face_huh2>        &huh;       )
+        | (?P<face_oh2>         &oh;        )
+        | (?P<face_wink1>       &wink;      )
+        | (?P<face_sad2>        &sad;       )
+        | (?P<face_heart0>      &heart;     )
+        | (?P<face_worried0>    &worried;   )
+
+        # face marks (japanese)
+        | (?P<face_smile2>      \s\(\^\^\)  )
+        | (?P<face_bigsmile2>   \s\(\^-\^   )
+        | (?P<face_oh3>         \s\(\.\.;   )
+        | (?P<face_wink2>       \s\(\^_-\)  )
+        | (?P<face_sad3>        \s\(--;     )
+        | (?P<face_worried1>    \s\(\^\^;\) )
+        | (?P<face_worried2>    \s\(\^\^;   )
+
+        # mobile push buttons
+        | (?P<mobile_1>         &pb1;       )
+        | (?P<mobile_2>         &pb2;       )
+        | (?P<mobile_3>         &pb3;       )
+        | (?P<mobile_4>         &pb4;       )
+        | (?P<mobile_5>         &pb5;       )
+        | (?P<mobile_6>         &pb6;       )
+        | (?P<mobile_7>         &pb7;       )
+        | (?P<mobile_8>         &pb8;       )
+        | (?P<mobile_9>         &pb9;       )
+        | (?P<mobile_0>         &pb0;       )
+        | (?P<mobile_s>         &pb\#;      )
+
+        # mobile emojis
+        | (?P<amp_zzz>          &zzz;       )
+        | (?P<amp_man>          &man;       )
+        | (?P<amp_clock>        &clock;     )
+        | (?P<amp_mail>         &mail;      )
+        | (?P<amp_mailto>       &mailto;    )
+        | (?P<amp_phone>        &phone;     )
+        | (?P<amp_phoneto>      &phoneto;   )
+        | (?P<amp_faxto>        &faxto;     )
+    "
     );
+
+    // const BRACES: &[char] = &['{', '}'];
+
+    let color_blocks = get_color_blocks(str);
+    let size_blocks = get_size_blocks(str, &color_blocks);
+    let color_swithces = get_color_switches(str, &color_blocks, &size_blocks);
+    let _size_switches = get_size_switches(str, &color_blocks, &size_blocks, &color_swithces);
+
     static ENTITY_MAP: Lazy<HashMap<&str, &Entity>> =
         once_cell::sync::Lazy::new(|| ENTITIES.iter().map(|e| (e.entity, e)).collect());
     regex
@@ -1009,6 +1080,137 @@ fn make_line_rules(str: &str) -> impl Iterator<Item = InlineElement> + '_ {
             }
         })
 }
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+struct BraceBlock {
+    /// `COLOR(` or `SIZE(`
+    kw: Range<usize>,
+    /// `){`
+    mid: Range<usize>,
+    /// `}`
+    close: Range<usize>,
+}
+fn get_brace_blocks(
+    str: &str,
+    keyword: &str,
+    mut middle_iter: Peekable<impl Iterator<Item = Range<usize>>>,
+    mut close_iter: Peekable<impl Iterator<Item = Range<usize>>>,
+    mut paren_iter: Peekable<impl Iterator<Item = Range<usize>>>,
+) -> Vec<BraceBlock> {
+    let mut res = vec![];
+    let mut last = 0;
+    for kw in find_iter_str(str, keyword) {
+        if kw.start < last {
+            continue;
+        }
+        dbg!(&kw);
+        let mid = unwrap_break!(dbg!(middle_iter.peeking_find(|x| kw.end <= x.start)));
+        let next_paren = dbg!(paren_iter
+            .peeking_find(|x| kw.end <= x.start)
+            .expect("){ is found"));
+        if next_paren.start < mid.start {
+            continue;
+        }
+        let mid = middle_iter.next().expect("proven by existence of mid"); // Peeked::pop(mid);
+        let close = unwrap_break!(dbg!(close_iter.find(|x| mid.end <= x.start)));
+        last = close.end;
+        res.push(BraceBlock { kw, mid, close });
+    }
+    res
+}
+const PARENS: &[char] = &['(', ')'];
+fn get_color_blocks(str: &str) -> Vec<BraceBlock> {
+    let middle_iter = find_iter_str(str, "){").peekable();
+    let close_iter = find_iter_char(str, '}').peekable();
+    let paren_iter = find_iter_char_any(str, PARENS).peekable();
+    get_brace_blocks(str, "COLOR(", middle_iter, close_iter, paren_iter)
+}
+fn get_size_blocks(str: &str, color_blocks: &[BraceBlock]) -> Vec<BraceBlock> {
+    let middle_iter = find_iter_str(str, "){")
+        .remove_overlapping(color_blocks.iter().map(|x| &x.mid))
+        .peekable();
+    let close_iter = find_iter_char(str, '}')
+        .remove_overlapping(color_blocks.iter().map(|x| &x.close))
+        .peekable();
+    let paren_iter = find_iter_char_any(str, PARENS)
+        .remove_overlapping(color_blocks.iter().flat_map(|x| [&x.kw, &x.mid]))
+        .peekable();
+    get_brace_blocks(str, "SIZE(", middle_iter, close_iter, paren_iter)
+}
+
+struct FormatSwitch {
+    /// `COLOR(` or `SIZE(`
+    kw: Range<usize>,
+    /// `):`
+    delim: Range<usize>,
+    /// end
+    end: usize,
+}
+fn get_format_switch(
+    str: &str,
+    keyword: &str,
+    mut delim_iter: Peekable<impl Iterator<Item = Range<usize>> + Clone>,
+    mut paren_iter: Peekable<impl Iterator<Item = Range<usize>>>,
+) -> Vec<FormatSwitch> {
+    let n = str.len();
+    let keywords = find_iter_str(str, keyword).filter_map(move |kw| {
+        dbg!(&kw);
+        let delim = dbg!(delim_iter.peeking_find(|d| kw.end <= d.start))?;
+        Some((kw, delim.clone()))
+    });
+    let mut keywords_next = keywords.clone().map(|x| x.0.start).peekable();
+    let mut res = vec![];
+    let mut last = 0;
+    for (kw, delim) in keywords {
+        if kw.start < last {
+            continue;
+        }
+        dbg!(&kw);
+        dbg!(&delim);
+        let &end = keywords_next
+            .peeking_find(|&next| delim.end <= next)
+            .unwrap_or(&n);
+        dbg!(&end);
+        let next_paren = paren_iter
+            .peeking_find(|x| kw.end <= x.start)
+            .expect("): is found");
+        if next_paren.start < delim.start {
+            continue;
+        }
+        last = end;
+        res.push(FormatSwitch { kw, delim, end });
+    }
+    res
+}
+fn get_color_switches(
+    str: &str,
+    color_blocks: &[BraceBlock],
+    size_blocks: &[BraceBlock],
+) -> Vec<FormatSwitch> {
+    let delim_iter = find_iter_str(str, "):").peekable();
+    let paren_iter = find_iter_char_any(str, PARENS)
+        .remove_overlapping(color_blocks.iter().flat_map(|x| [&x.kw, &x.mid]))
+        .remove_overlapping(size_blocks.iter().flat_map(|x| [&x.kw, &x.mid]))
+        .peekable();
+    get_format_switch(str, "COLOR(", delim_iter, paren_iter)
+}
+fn get_size_switches(
+    str: &str,
+    color_blocks: &[BraceBlock],
+    size_blocks: &[BraceBlock],
+    color_switches: &[FormatSwitch],
+) -> Vec<FormatSwitch> {
+    let delim_iter = find_iter_str(str, "):")
+        .remove_overlapping(color_switches.iter().map(|x| &x.delim))
+        .peekable();
+    let paren_iter = find_iter_char_any(str, PARENS)
+        .remove_overlapping(color_blocks.iter().flat_map(|x| [&x.kw, &x.mid]))
+        .remove_overlapping(size_blocks.iter().flat_map(|x| [&x.kw, &x.mid]))
+        .remove_overlapping(color_switches.iter().flat_map(|x| [&x.kw, &x.delim]))
+        .peekable();
+    get_format_switch(str, "SIZE(", delim_iter, paren_iter)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum HtmlCharcodeError {
     Replace,
@@ -1114,9 +1316,53 @@ fn trim_cow<'a>(str: &Cow<'a, str>) -> Cow<'a, str> {
     }
 }
 
+fn find_iter_str<'a>(
+    haystack: &'a str,
+    needle: &'a str,
+) -> impl Iterator<Item = Range<usize>> + 'a + Clone {
+    std::iter::successors(Some(0..0), move |r| {
+        let i = r.end;
+        haystack[i..]
+            .find(needle)
+            .map(|s| i + s..i + s + needle.len())
+    })
+    .skip(1)
+}
+
+fn find_iter_char(haystack: &str, needle: char) -> impl Iterator<Item = Range<usize>> + '_ + Clone {
+    std::iter::successors(Some(0..0), move |r| {
+        let i = r.end;
+        haystack[i..]
+            .find(needle)
+            .map(|s| i + s..i + s + needle.len_utf8())
+    })
+    .skip(1)
+}
+
+fn find_iter_char_any<'a>(
+    haystack: &'a str,
+    needles: &'a [char],
+) -> impl Iterator<Item = Range<usize>> + 'a + Clone {
+    std::iter::successors(Some(0..0), move |r| {
+        let i = r.end;
+        haystack[i..].find(needles).map(|s| {
+            let s = i + s;
+            let t = (s + 1..)
+                .find(|&i| haystack.is_char_boundary(i))
+                .expect("Always exists");
+            s..t
+        })
+    })
+    .skip(1)
+}
+
 #[cfg(test)]
 mod test {
-    use crate::pukiwiki_parser::parser::{as_numeric, is_url};
+    use crate::pukiwiki_parser::parser::{
+        as_numeric, get_color_switches, get_size_blocks, get_size_switches, is_url,
+    };
+
+    use super::get_color_blocks;
 
     #[test]
     fn test_strip_prefix_n() {
@@ -1164,5 +1410,143 @@ mod test {
         assert!(!is_url("https://example.com/example.png "));
         assert!(!is_url("   https://example.com/example.png"));
         assert!(!is_url("this_is_not_url"));
+    }
+
+    macro_rules! assert_blocks {
+        ($lhs: expr, [$($rhs: expr),* $(,)?]) => {{
+            use ::itertools::Itertools;
+            assert_eq!(
+                $lhs.into_iter().map(|x| (x.kw, x.mid, x.close)).collect_vec(),
+                vec![$($rhs),*]
+            );
+        }};
+    }
+
+    macro_rules! assert_switches {
+        ($lhs: expr, [$($rhs: expr),* $(,)?]) => {{
+            use ::itertools::Itertools;
+            assert_eq!(
+                $lhs.into_iter().map(|x| (x.kw, x.delim, x.end)).collect_vec(),
+                vec![$($rhs),*]
+            );
+        }};
+    }
+
+    #[test]
+    fn test_color_blocks() {
+        //                   1         2         3         4         5         6         7         8
+        //         012345678901234567890123456789012345678901234567890123456789012345678901234567890
+        let str = "COLOR(blue){test}";
+        let res = get_color_blocks(str);
+        assert_blocks!(res, [(0..6, 10..12, 16..17)]);
+
+        //                   1         2         3         4         5         6         7         8
+        //         012345678901234567890123456789012345678901234567890123456789012345678901234567890
+        let str = "    COLOR(blue){    { COLOR(red){   {  }}}}";
+        let res = get_color_blocks(str);
+        assert_blocks!(res, [(4..10, 14..16, 39..40)]);
+
+        //                   1         2         3         4         5         6         7         8
+        //         012345678901234567890123456789012345678901234567890123456789012345678901234567890
+        let str = "    COLOR( COLOR(green){ test } ){ another test }";
+        let res = get_color_blocks(str);
+        assert_blocks!(res, [(11..17, 22..24, 30..31)]);
+
+        //                   1         2         3         4         5         6         7         8
+        //         012345678901234567890123456789012345678901234567890123456789012345678901234567890
+        let str = "COLOR(red){text}COLOR(blue){another}";
+        let res = get_color_blocks(str);
+        assert_blocks!(res, [(0..6, 9..11, 15..16), (16..22, 26..28, 35..36)]);
+    }
+
+    #[test]
+    fn test_size_blocks() {
+        //                   1         2         3         4         5         6         7         8
+        //         012345678901234567890123456789012345678901234567890123456789012345678901234567890
+        let str = "  SIZE(13){large text}  ";
+        let colors = get_color_blocks(str);
+        let sizes = get_size_blocks(str, &colors);
+        assert_blocks!(colors, []);
+        assert_blocks!(sizes, [(2..7, 9..11, 21..22)]);
+
+        //                   1         2         3         4         5         6         7         8
+        //         012345678901234567890123456789012345678901234567890123456789012345678901234567890
+        let str = "SIZE(13){COLOR(red){text}}";
+        let colors = get_color_blocks(str);
+        let sizes = get_size_blocks(str, &colors);
+        assert_blocks!(colors, [(9..15, 18..20, 24..25)]);
+        assert_blocks!(sizes, [(0..5, 7..9, 25..26)]);
+
+        //                   1         2         3         4         5         6         7         8
+        //         012345678901234567890123456789012345678901234567890123456789012345678901234567890
+        let str = "COLOR(red){SIZE(13){text}}";
+        let colors = get_color_blocks(str);
+        let sizes = get_size_blocks(str, &colors);
+        assert_blocks!(colors, [(0..6, 9..11, 24..25)]);
+        assert_blocks!(sizes, [(11..16, 18..20, 25..26)]);
+
+        //                   1         2         3         4         5         6         7         8
+        //         012345678901234567890123456789012345678901234567890123456789012345678901234567890
+        let str = "SIZE(COLOR(red){text}){another}";
+        let colors = get_color_blocks(str);
+        let sizes = get_size_blocks(str, &colors);
+        assert_blocks!(colors, [(5..11, 14..16, 20..21)]);
+        assert_blocks!(sizes, [(0..5, 21..23, 30..31)]);
+
+        //                   1         2         3         4         5         6         7         8
+        //         012345678901234567890123456789012345678901234567890123456789012345678901234567890
+        let str = "COLOR(SIZE(18){text}){another}";
+        let colors = get_color_blocks(str);
+        let sizes = get_size_blocks(str, &colors);
+        assert_blocks!(colors, []);
+        assert_blocks!(sizes, [(6..11, 13..15, 19..20)]);
+    }
+
+    #[test]
+    fn test_color_switches() {
+        //                   1         2         3         4         5         6         7         8
+        //         012345678901234567890123456789012345678901234567890123456789012345678901234567890
+        let str = "no color COLOR(red):this is a text COLOR(blue):this is another test";
+        let color_blocks = get_color_blocks(str);
+        let size_blocks = get_size_blocks(str, &color_blocks);
+        let color_switches = get_color_switches(str, &color_blocks, &size_blocks);
+        assert_blocks!(color_blocks, []);
+        assert_blocks!(size_blocks, []);
+        assert_switches!(color_switches, [(9..15, 18..20, 35), (35..41, 45..47, 67)]);
+
+        //                   1         2         3         4         5         6         7         8
+        //         012345678901234567890123456789012345678901234567890123456789012345678901234567890
+        let str = "COLOR(  COLOR(red):test COLOR( COLOR(green): another  COLOR( ():";
+        let color_blocks = get_color_blocks(str);
+        let size_blocks = get_size_blocks(str, &color_blocks);
+        let color_switches = get_color_switches(str, &color_blocks, &size_blocks);
+        assert_blocks!(color_blocks, []);
+        assert_blocks!(size_blocks, []);
+        assert_switches!(color_switches, [(8..14, 17..19, 24), (31..37, 42..44, 54)]);
+
+        //                   1         2         3         4         5         6         7         8
+        //         012345678901234567890123456789012345678901234567890123456789012345678901234567890
+        let str = "COLOR(SIZE(COLOR(red){text}){another}):test";
+        let color_blocks = get_color_blocks(str);
+        let size_blocks = get_size_blocks(str, &color_blocks);
+        let color_switches = get_color_switches(str, &color_blocks, &size_blocks);
+        assert_blocks!(color_blocks, [(11..17, 20..22, 26..27)]);
+        assert_blocks!(size_blocks, [(6..11, 27..29, 36..37)]);
+        assert_switches!(color_switches, [(0..6, 37..39, 43)]);
+    }
+
+    #[test]
+    fn test_size_switches() {
+        //                   1         2         3         4         5         6         7         8
+        //         012345678901234567890123456789012345678901234567890123456789012345678901234567890
+        let str = "SIZE(COLOR(SIZE(COLOR(red){p}){q}):r):s COLOR(blue):t SIZE(12):u";
+        let color_blocks = get_color_blocks(str);
+        let size_blocks = get_size_blocks(str, &color_blocks);
+        let color_switches = get_color_switches(str, &color_blocks, &size_blocks);
+        let size_switches = get_size_switches(str, &color_blocks, &size_blocks, &color_switches);
+        assert_blocks!(color_blocks, [(16..22, 25..27, 28..29)]);
+        assert_blocks!(size_blocks, [(11..16, 29..31, 32..33)]);
+        assert_switches!(color_switches, [(5..11, 33..35, 40), (40..46, 50..52, 64)]);
+        assert_switches!(size_switches, [(0..5, 36..38, 54), (54..59, 61..63, 64)]);
     }
 }
