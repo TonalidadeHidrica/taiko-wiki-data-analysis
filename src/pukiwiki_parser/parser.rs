@@ -723,7 +723,7 @@ impl From<String> for InlineElement {
 fn make_link(text: Cow<str>, config: &Config) -> Vec<InlineElement> {
     let text = text.into_owned();
     pcre!(
-        r#"""
+        r###"
             ( # Link_plugin (1)
                 &
                 (      # (1) plain
@@ -813,7 +813,7 @@ fn make_link(text: Cow<str>, config: &Config) -> Vec<InlineElement> {
             ( # Link_wikiname (29)
                 ((?:[A-Z][a-z]+){2,}(?!\w))
             )
-        """#,
+        "###,
         x
     )
     .with(|pattern| {
@@ -822,15 +822,15 @@ fn make_link(text: Cow<str>, config: &Config) -> Vec<InlineElement> {
             let groups = match groups {
                 MatchComponent::Match(m) => m,
                 MatchComponent::Between(str) => {
-                    res.push(str.to_owned().into());
+                    res.extend(make_line_rules(str).map(InlineElement::InlineToken));
                     continue;
                 }
             };
             if let Some(group) = groups.group_opt(1) {
                 // Link_plugin
-                let plugin_name = groups.group(2).to_owned();
-                let parameter = groups.group_opt(3).map(str::to_owned);
-                let body = groups.group_opt(4).map(|s| make_link(s.into(), config));
+                let plugin_name = groups.group(3).to_owned();
+                let parameter = groups.group_opt(4).map(str::to_owned);
+                let body = groups.group_opt(5).map(|s| make_link(s.into(), config));
                 if exist_plugin_inline(&plugin_name) {
                     let parsed = InlinePlugin {
                         plugin_name,
@@ -992,9 +992,13 @@ pub enum InlineToken {
 pub enum SpecialChar {
     NamedEntity(&'static Entity),
     Char(char),
+    #[from(ignore)]
+    NonCharacter(char),
+    #[from(ignore)]
+    ControlCharacter(char),
     ReplacementCharacter,
 }
-#[derive(Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum FaceMark {
     Smile,
     BigSmile,
@@ -1005,7 +1009,7 @@ pub enum FaceMark {
     Heart,
     Worried,
 }
-#[derive(Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum PushButton {
     Pb0,
     Pb1,
@@ -1019,7 +1023,7 @@ pub enum PushButton {
     Pb9,
     PbHash,
 }
-#[derive(Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum MobileEmoji {
     Zzz,
     Man,
@@ -1030,14 +1034,14 @@ pub enum MobileEmoji {
     PhoneTo,
     FaxTo,
 }
-#[derive(Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum StyleSpecifierStart {
     ColorBlock,
     SizeBlock,
     ColorSwitch,
     SizeSwitch,
 }
-#[derive(Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum StyleKind {
     Span,
     Ins,
@@ -1206,7 +1210,20 @@ fn make_line_rules(str: &str) -> impl Iterator<Item = InlineToken> + '_ {
                 .flat_map(|x| [(x.start, StyleStart(Strong)), (x.end, StyleEnd(Strong))]),
             cmp,
         )
-        .map(|x| x.1)
+        .match_components(str)
+        .map(|x| match x {
+            MatchComponent::Between(s) => InlineToken::Str(s.to_owned()),
+            MatchComponent::Match((_, token)) => token,
+        })
+}
+
+impl<T> MatchLike for (Range<usize>, T) {
+    fn start_pos(&self) -> usize {
+        self.0.start
+    }
+    fn end_pos(&self) -> usize {
+        self.0.end
+    }
 }
 
 fn match_to_token(captures: Captures) -> InlineToken {
@@ -1221,7 +1238,10 @@ fn match_to_token(captures: Captures) -> InlineToken {
     let as_charcode = |a: Result<u32, _>| match html_charcode(a.unwrap_or(u32::MAX)) {
         Ok(c) => IT::SpecialChar(c.into()),
         Err(HtmlCharcodeError::Replace) => IT::SpecialChar(SpecialChar::ReplacementCharacter),
-        Err(HtmlCharcodeError::AsIs) => captures.get(0).unwrap().as_str().to_owned().into(),
+        Err(HtmlCharcodeError::NonCharacter(c)) => IT::SpecialChar(SpecialChar::NonCharacter(c)),
+        Err(HtmlCharcodeError::ControlCharacter(c)) => {
+            IT::SpecialChar(SpecialChar::ControlCharacter(c))
+        }
     };
 
     let has_match = |s| captures.name(s).is_some();
@@ -1230,8 +1250,8 @@ fn match_to_token(captures: Captures) -> InlineToken {
         as_charcode(entity_decimal.as_str().parse())
     } else if let Some(entity_hex) = captures.name("entity_hex") {
         as_charcode(u32::from_str_radix(entity_hex.as_str(), 16))
-    } else if let Some(entity_named) = captures.name("entity_named") {
-        let entity = *ENTITY_MAP.get(entity_named.as_str()).unwrap();
+    } else if has_match("entity_named") {
+        let entity = *ENTITY_MAP.get(captures.get(0).unwrap().as_str()).unwrap();
         IT::SpecialChar(entity.into())
     } else if has_match("newline") {
         IT::NewLine
@@ -1308,16 +1328,15 @@ fn get_brace_blocks(
         if kw.start < last {
             continue;
         }
-        dbg!(&kw);
-        let mid = unwrap_break!(dbg!(middle_iter.peeking_find(|x| kw.end <= x.start)));
-        let next_paren = dbg!(paren_iter
+        let mid = unwrap_break!(middle_iter.peeking_find(|x| kw.end <= x.start));
+        let next_paren = paren_iter
             .peeking_find(|x| kw.end <= x.start)
-            .expect("){ is found"));
+            .expect("){ is found");
         if next_paren.start < mid.start {
             continue;
         }
         let mid = middle_iter.next().expect("proven by existence of mid"); // Peeked::pop(mid);
-        let close = unwrap_break!(dbg!(close_iter.find(|x| mid.end <= x.start)));
+        let close = unwrap_break!(close_iter.find(|x| mid.end <= x.start));
         last = close.end;
         res.push(BraceBlock { kw, mid, close });
     }
@@ -1359,8 +1378,7 @@ fn get_format_switch(
 ) -> Vec<FormatSwitch> {
     let n = str.len();
     let keywords = find_iter_str(str, keyword).filter_map(move |kw| {
-        dbg!(&kw);
-        let delim = dbg!(delim_iter.peeking_find(|d| kw.end <= d.start))?;
+        let delim = delim_iter.peeking_find(|d| kw.end <= d.start)?;
         Some((kw, delim.clone()))
     });
     let mut keywords_next = keywords.clone().map(|x| x.0.start).peekable();
@@ -1370,12 +1388,9 @@ fn get_format_switch(
         if kw.start < last {
             continue;
         }
-        dbg!(&kw);
-        dbg!(&delim);
         let &end = keywords_next
             .peeking_find(|&next| delim.end <= next)
             .unwrap_or(&n);
-        dbg!(&end);
         let next_paren = paren_iter
             .peeking_find(|x| kw.end <= x.start)
             .expect("): is found");
@@ -1427,7 +1442,6 @@ fn get_format_ranges(str: &str, regex: &Regex) -> (Vec<FormatRange>, Vec<FormatR
         .collect_vec();
     let mut res = (vec![], vec![]);
     for (res, len) in zip([&mut res.0, &mut res.1], [3, 2]) {
-        dbg!(&positions, len);
         let find = |slice: &[Range<usize>]| (0..slice.len()).find(|&i| slice[i].len() >= len);
         let mut s = find(&positions);
         while let Some(i) = s {
@@ -1450,7 +1464,8 @@ fn get_format_ranges(str: &str, regex: &Regex) -> (Vec<FormatRange>, Vec<FormatR
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum HtmlCharcodeError {
     Replace,
-    AsIs,
+    NonCharacter(char),
+    ControlCharacter(char),
 }
 fn html_charcode(charcode: u32) -> Result<char, HtmlCharcodeError> {
     use HtmlCharcodeError::*;
@@ -1463,11 +1478,11 @@ fn html_charcode(charcode: u32) -> Result<char, HtmlCharcodeError> {
         | 0x4FFFF | 0x5FFFE | 0x5FFFF | 0x6FFFE | 0x6FFFF | 0x7FFFE | 0x7FFFF | 0x8FFFE
         | 0x8FFFF | 0x9FFFE | 0x9FFFF | 0xAFFFE | 0xAFFFF | 0xBFFFE | 0xBFFFF | 0xCFFFE
         | 0xCFFFF | 0xDFFFE | 0xDFFFF | 0xEFFFE | 0xEFFFF | 0xFFFFE | 0xFFFFF | 0x10FFFE
-        | 0x10FFFF => Err(Replace), // Non-character
-        0x0D => Err(AsIs),
+        | 0x10FFFF => Err(NonCharacter(char::from_u32(charcode).unwrap())), // Non-character
+        0x0D => Err(ControlCharacter(char::from_u32(charcode).unwrap())), // CR
         x if (0x00..=0x1F).contains(&x) || (0x7F..0x9F).contains(&x) => {
+            // ASCII control sequence
             Ok(char::from_u32(match x {
-                // ASCII control sequence
                 0x09 | 0x0A | 0x0C | 0x0D | 0x20 => x, // ASCII whitespace
                 0x80 => 0x20AC,
                 0x82 => 0x201A,
@@ -1496,7 +1511,7 @@ fn html_charcode(charcode: u32) -> Result<char, HtmlCharcodeError> {
                 0x9C => 0x0153,
                 0x9E => 0x017E,
                 0x9F => 0x0178,
-                _ => return Err(AsIs),
+                _ => return Err(ControlCharacter(char::from_u32(x).unwrap())),
             })
             .unwrap())
         }
@@ -1594,12 +1609,17 @@ fn find_iter_char_any<'a>(
 
 #[cfg(test)]
 mod test {
-    use crate::pukiwiki_parser::parser::{
-        as_numeric, get_color_switches, get_size_blocks, get_size_switches, is_url,
+    use super::{
+        as_numeric, get_color_blocks, get_color_switches, get_format_ranges, get_size_blocks,
+        get_size_switches, is_url, make_line_rules, make_link, Config, InlineElement as IE,
+        InlineToken as IT,
     };
-    use crate::regex;
-
-    use super::{get_color_blocks, get_format_ranges};
+    use crate::{
+        pukiwiki_parser::parser::{InlinePlugin, InterWikiUrl, Link, MailTo, PageLink},
+        regex,
+    };
+    use assert_matches::assert_matches;
+    use entities::Entity;
 
     #[test]
     fn test_strip_prefix_n() {
@@ -1849,5 +1869,179 @@ mod test {
         let (tri, dva) = get_format_ranges(str, regex);
         assert_ranges!(tri, [(0..3, 4..7), (9..12, 13..16)]);
         assert_ranges!(dva, []);
+    }
+
+    #[test]
+    fn test_make_line_rules_entities() {
+        use super::SpecialChar as SC;
+
+        let mut tokens = make_line_rules("&#64;&#2832;&#30906;");
+        assert_matches!(tokens.next(), Some(IT::SpecialChar(SC::Char('@'))));
+        assert_matches!(tokens.next(), Some(IT::SpecialChar(SC::Char('ଐ'))));
+        assert_matches!(tokens.next(), Some(IT::SpecialChar(SC::Char('確'))));
+        assert_matches!(tokens.next(), None);
+
+        let mut tokens = make_line_rules(
+            "&#x0;&#x86;&#xa7;&#x8a8d;&#xd800;&#x1f34e;&#x7fffe;&#xffff123;&#xeeeeeeeeeeeeeeeeeee;",
+        );
+        assert_matches!(
+            tokens.next(),
+            Some(IT::SpecialChar(SC::ReplacementCharacter))
+        ); // Null
+        assert_matches!(tokens.next(), Some(IT::SpecialChar(SC::Char('†'))));
+        assert_matches!(tokens.next(), Some(IT::SpecialChar(SC::Char('§'))));
+        assert_matches!(tokens.next(), Some(IT::SpecialChar(SC::Char('認'))));
+        assert_matches!(
+            tokens.next(),
+            Some(IT::SpecialChar(SC::ReplacementCharacter))
+        ); // Surrogate
+        assert_matches!(tokens.next(), Some(IT::SpecialChar(SC::Char('🍎'))));
+        assert_matches!(
+            tokens.next(),
+            Some(IT::SpecialChar(SC::NonCharacter('\u{7fffe}')))
+        );
+        assert_matches!(
+            tokens.next(),
+            Some(IT::SpecialChar(SC::ReplacementCharacter))
+        ); // Out of range
+        assert_matches!(
+            tokens.next(),
+            Some(IT::SpecialChar(SC::ReplacementCharacter))
+        ); // Out of range (overflow)
+        assert_matches!(tokens.next(), None);
+
+        // Unlinke HTML, the parser does not accept capital hex
+        let mut tokens = make_line_rules("&#x1F34E;");
+        assert_matches!(tokens.next(), Some(IT::Str(_)));
+        assert_matches!(tokens.next(), None);
+
+        let mut tokens = make_line_rules("&Aacute&Aacute;&cap;&unknown;");
+        assert_matches!(tokens.next(), Some(IT::Str(s)) if s == "&Aacute");
+        assert_matches!(
+            tokens.next(),
+            Some(IT::SpecialChar(SC::NamedEntity(Entity {
+                characters: "Á",
+                ..
+            })))
+        );
+        assert_matches!(
+            tokens.next(),
+            Some(IT::SpecialChar(SC::NamedEntity(Entity {
+                characters: "∩",
+                ..
+            })))
+        );
+        assert_matches!(tokens.next(), Some(IT::Str(s)) if s == "&unknown;");
+    }
+
+    #[test]
+    fn test_make_line_rules() {
+        use super::StyleKind::*;
+        use super::StyleSpecifierStart::*;
+
+        let mut tokens = make_line_rules(
+            "This is a test. SIZE(16){This is a large text.} COLOR(red){This is a red text.}",
+        );
+        assert_matches!(tokens.next(), Some(IT::Str(s)) if s == "This is a test. ");
+        assert_matches!(tokens.next(), Some(IT::StyleSpecifierStart(SizeBlock)));
+        assert_matches!(tokens.next(), Some(IT::Str(s)) if s == "16");
+        assert_matches!(tokens.next(), Some(IT::StyleStart(Span)));
+        assert_matches!(tokens.next(), Some(IT::Str(s)) if s == "This is a large text.");
+        assert_matches!(tokens.next(), Some(IT::StyleEnd(Span)));
+        assert_matches!(tokens.next(), Some(IT::Str(s)) if s == " ");
+        assert_matches!(tokens.next(), Some(IT::StyleSpecifierStart(ColorBlock)));
+        assert_matches!(tokens.next(), Some(IT::Str(s)) if s == "red");
+        assert_matches!(tokens.next(), Some(IT::StyleStart(Span)));
+        assert_matches!(tokens.next(), Some(IT::Str(s)) if s == "This is a red text.");
+        assert_matches!(tokens.next(), Some(IT::StyleEnd(Span)));
+    }
+
+    #[test]
+    fn test_make_link() {
+        let config = Config::default();
+
+        // Inline plugin
+        let res = make_link("&ref(image.png,nolink);".into(), &config);
+        assert_eq!(res.len(), 1);
+        assert_matches!(
+            &res[0],
+            IE::InlinePlugin(InlinePlugin { plugin_name, parameter: Some(param), body: None })
+            if plugin_name == "ref" && param == "image.png,nolink"
+        );
+
+        // Footnote
+        let res = make_link("text((footnote))".into(), &config);
+        assert_eq!(res.len(), 2);
+        assert_matches!(&res[0], IE::InlineToken(IT::Str(s)) if s == "text");
+        let elems = assert_matches!(&res[1], IE::Footnote(footnote) => &footnote.contents);
+        assert_eq!(elems.len(), 1);
+        assert_matches!(&elems[0], IE::InlineToken(IT::Str(s)) if s == "footnote");
+
+        // Link with brackets, separated by :
+        let res = make_link("[[link:https://example.com]]".into(), &config);
+        assert_eq!(res.len(), 1);
+        let caption = assert_matches!(
+            &res[0],
+            IE::Link(Link { caption, url }) if url == "https://example.com"
+            => caption
+        );
+        assert_eq!(caption.len(), 1);
+        assert_matches!(&caption[0], IE::InlineToken(IT::Str(s)) if s == "link");
+
+        // Link with brackets, separated by `>`
+        let res = make_link("[[link>https://example.com]]".into(), &config);
+        assert_eq!(res.len(), 1);
+        let caption = assert_matches!(
+            &res[0],
+            IE::Link(Link { caption, url }) if url == "https://example.com"
+            => caption
+        );
+        assert_eq!(caption.len(), 1);
+        assert_matches!(&caption[0], IE::InlineToken(IT::Str(s)) if s == "link");
+
+        // Link without brackets
+        let res = make_link("https://example.com".into(), &config);
+        assert_eq!(res.len(), 1);
+        assert_matches!(
+            &res[0],
+            IE::Link(Link { caption, url }) if url == "https://example.com" && caption.is_empty()
+        );
+
+        // Interwiki URL definition?
+        let res = make_link(
+            "[https://pukiwiki.osdn.jp/index.php pukiwiki]".into(),
+            &config,
+        );
+        assert_eq!(res.len(), 1);
+        let caption = assert_matches!(
+            &res[0],
+            IE::InterWikiUrl(InterWikiUrl { caption, url })
+            if url == "https://pukiwiki.osdn.jp/index.php"
+            => caption
+        );
+        assert_eq!(caption.len(), 1);
+        assert_matches!(&caption[0], IE::InlineToken(IT::Str(s)) if s == "pukiwiki");
+
+        // Mailto with brackets
+        let res = make_link("[[alias>example@example.com]]".into(), &config);
+        assert_eq!(res.len(), 1);
+        let caption = assert_matches!(
+            &res[0],
+            IE::MailTo(MailTo { address, caption })
+            if address == "example@example.com"
+            => caption
+        );
+        assert_eq!(caption.len(), 1);
+        assert_matches!(&caption[0], IE::InlineToken(IT::Str(s)) if s == "alias");
+
+        // Wikiname
+        let res = make_link("WikiName".into(), &config);
+        let contents = assert_matches!(
+            &res[..],
+            [IE::PageLink(PageLink {page: Some(page), contents, anchor: None, is_auto_link: false})]
+            if page == "WikiName"
+            => contents
+        );
+        assert_matches!(&contents[..], [IE::InlineToken(IT::Str(s))] if s == "WikiName");
     }
 }
