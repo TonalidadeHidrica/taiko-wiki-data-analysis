@@ -1,10 +1,8 @@
-use std::{
-    borrow::Borrow,
-    iter::Peekable,
-    ops::{Deref, Range},
-};
+use std::{borrow::Borrow, iter::Peekable, marker::PhantomData, ops::Deref};
 
 use itertools::Itertools;
+
+use crate::regex_ext::iter::MatchLike;
 
 pub trait MyItertools: Iterator {
     fn split_first(mut self) -> (Option<Self::Item>, Self)
@@ -23,16 +21,23 @@ pub trait MyItertools: Iterator {
         TakeUntil::new(self, predicate)
     }
 
+    // #[inline]
+    // fn remove_overlapping<T, J>(self, filter: J) -> RemoveOverlapping<Self, J::IntoIter, J::Item>
+    // where
+    //     Self: Sized,
+    //     J: IntoIterator,
     #[inline]
-    fn remove_overlapping<T, J>(self, filter: J) -> RemoveOverlapping<Self, J::IntoIter>
+    fn remove_overlapping<J>(self, filter: J) -> RemoveOverlapping<Self, J::IntoIter, J::Item>
     where
-        Self: Sized,
+        Self: Sized + Iterator,
+        Self::Item: MatchLike,
         J: IntoIterator,
-        RemoveOverlapping<Self, J::IntoIter>: Iterator<Item = Range<T>>,
+        J::Item: MatchLike,
     {
         RemoveOverlapping {
             it: self,
             filter: filter.into_iter().peekable(),
+            _phantom: Default::default(),
         }
     }
 }
@@ -75,33 +80,34 @@ where
     }
 }
 
-pub struct RemoveOverlapping<I, J>
+pub struct RemoveOverlapping<I, J, JT>
 where
     J: Iterator,
 {
     it: I,
     filter: Peekable<J>,
-    // _phnatom: PhantomData<fn() -> (T, B)>,
+    _phantom: PhantomData<fn() -> JT>,
 }
-impl<T, B, I, J> Iterator for RemoveOverlapping<I, J>
+impl<I, IT, J, JT> Iterator for RemoveOverlapping<I, J, JT>
 where
-    I: Iterator<Item = Range<T>>,
-    J: Iterator<Item = B>,
-    B: Borrow<Range<T>>,
-    T: Ord,
-    T: std::fmt::Debug,
+    I: Iterator<Item = IT>,
+    IT: MatchLike,
+    J: Iterator<Item = JT>,
+    // JB: Borrow<JT>,
+    JT: MatchLike,
+    // T: std::fmt::Debug,
 {
-    type Item = Range<T>;
+    type Item = IT;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.it.find(|subject| {
             self.filter
-                .peeking_find(|next| subject.start < next.borrow().end)
-                .map_or(true, |next| subject.end <= next.deref().borrow().start)
+                .peeking_find(|next| subject.start_pos() < next.end_pos())
+                .map_or(true, |next| subject.end_pos() <= next.start_pos())
         })
     }
 }
-impl<I, J> Clone for RemoveOverlapping<I, J>
+impl<I, J, JT> Clone for RemoveOverlapping<I, J, JT>
 where
     I: Clone,
     J: Iterator,
@@ -111,6 +117,7 @@ where
         Self {
             it: self.it.clone(),
             filter: self.filter.clone(),
+            _phantom: Default::default(),
         }
     }
 }
@@ -161,6 +168,8 @@ impl<'a, T, I> Deref for Peeked<'a, T, I> {
 
 #[cfg(test)]
 mod test {
+    use std::ops::Range;
+
     use itertools::Itertools;
 
     use crate::my_itertools::{MyItertools, PeekableExt};

@@ -2,17 +2,17 @@ use std::{borrow::Cow, collections::HashMap, iter::Peekable, ops::Range};
 
 use either::*;
 use entities::{Entity, ENTITIES};
-use itertools::{zip, Itertools};
+use itertools::{any, zip, Itertools};
 use loop_unwrap::unwrap_break;
 use once_cell::sync::Lazy;
-use regex::Regex;
+use regex::{Captures, Regex};
 
 use crate::{
     either_ext::{into_common_2, EitherExt},
     my_itertools::{MyItertools, PeekableExt},
     pcre, regex,
     regex_ext::{
-        iter::{MatchComponent, MatchIterator},
+        iter::{MatchComponent, MatchIterator, MatchLike},
         pcre::MatchExt,
     },
 };
@@ -654,7 +654,7 @@ pub fn parse<'a>(config: &Config, lines: &'a str) -> Vec<Element<'a>> {
 
 #[derive(Debug, derive_more::From)]
 pub enum InlineElement {
-    String(String),
+    InlineToken(InlineToken),
     InlinePlugin(InlinePlugin),
     Footnote(Footnote),
     Link(Link),
@@ -663,8 +663,6 @@ pub enum InlineElement {
     Image(Image),
     InterWikiNameUrl(InterWikiNameUrl),
     PageLink(PageLink),
-    SpecialChar(SpecialChar),
-    NewLine,
 }
 #[derive(Debug)]
 pub struct InlinePlugin {
@@ -714,11 +712,12 @@ pub enum InterWikiDestination {
         opt: String,
     },
 }
-#[derive(Debug, derive_more::From)]
-pub enum SpecialChar {
-    NamedEntity(&'static Entity),
-    Char(char),
-    ReplacementCharacter,
+
+// Temporary
+impl From<String> for InlineElement {
+    fn from(string: String) -> Self {
+        InlineElement::InlineToken(InlineToken::Str(string))
+    }
 }
 
 fn make_link(text: Cow<str>, config: &Config) -> Vec<InlineElement> {
@@ -840,7 +839,7 @@ fn make_link(text: Cow<str>, config: &Config) -> Vec<InlineElement> {
                     };
                     res.push(parsed.into());
                 } else {
-                    res.extend(make_line_rules(group));
+                    res.extend(make_line_rules(group).map(InlineElement::InlineToken));
                 }
             } else if groups.group_opt(6).is_some() {
                 // Link_note
@@ -907,7 +906,7 @@ fn make_link(text: Cow<str>, config: &Config) -> Vec<InlineElement> {
                 let name_ref = name.as_deref().unwrap_or("");
                 let name_is_empty = name.as_ref().map_or(true, |s| s.is_empty());
                 if name_is_empty && anchor.as_ref().map_or(true, |s| s.is_empty()) {
-                    res.extend(make_line_rules(group));
+                    res.extend(make_line_rules(group).map(InlineElement::InlineToken));
                 } else if name_is_empty
                     // not wikiname
                     || pcre!(r"^(?:[A-Z][a-z]+){2,}(?!\w)$" => exec(name_ref)).is_none()
@@ -974,7 +973,80 @@ fn get_interwiki_url(_name: &str, _param: &str) -> Option<InterWikiDestination> 
     // so this does not affect to the parse result.
     None
 }
-fn make_line_rules(str: &str) -> impl Iterator<Item = InlineElement> + '_ {
+
+#[derive(Debug, derive_more::From)]
+pub enum InlineToken {
+    Str(String),
+    SpecialChar(SpecialChar),
+    NewLine,
+    FaceMark(FaceMark),
+    PushButton(PushButton),
+    MobileEmoji(MobileEmoji),
+    StyleSpecifierStart(StyleSpecifierStart),
+    #[from(ignore)]
+    StyleStart(StyleKind),
+    #[from(ignore)]
+    StyleEnd(StyleKind),
+}
+#[derive(Debug, derive_more::From)]
+pub enum SpecialChar {
+    NamedEntity(&'static Entity),
+    Char(char),
+    ReplacementCharacter,
+}
+#[derive(Debug)]
+pub enum FaceMark {
+    Smile,
+    BigSmile,
+    Huh,
+    Oh,
+    Wink,
+    Sad,
+    Heart,
+    Worried,
+}
+#[derive(Debug)]
+pub enum PushButton {
+    Pb0,
+    Pb1,
+    Pb2,
+    Pb3,
+    Pb4,
+    Pb5,
+    Pb6,
+    Pb7,
+    Pb8,
+    Pb9,
+    PbHash,
+}
+#[derive(Debug)]
+pub enum MobileEmoji {
+    Zzz,
+    Man,
+    Clock,
+    Mail,
+    MailTo,
+    Phone,
+    PhoneTo,
+    FaxTo,
+}
+#[derive(Debug)]
+pub enum StyleSpecifierStart {
+    ColorBlock,
+    SizeBlock,
+    ColorSwitch,
+    SizeSwitch,
+}
+#[derive(Debug)]
+pub enum StyleKind {
+    Span,
+    Ins,
+    Del,
+    Em,
+    Strong,
+}
+
+fn make_line_rules(str: &str) -> impl Iterator<Item = InlineToken> + '_ {
     let regex = regex!(
         r"(?x)
         &(?:
@@ -1027,7 +1099,7 @@ fn make_line_rules(str: &str) -> impl Iterator<Item = InlineElement> + '_ {
         | (?P<mobile_8>         &pb8;       )
         | (?P<mobile_9>         &pb9;       )
         | (?P<mobile_0>         &pb0;       )
-        | (?P<mobile_s>         &pb\#;      )
+        | (?P<mobile_h>         &pb\#;      )
 
         # mobile emojis
         | (?P<amp_zzz>          &zzz;       )
@@ -1041,46 +1113,177 @@ fn make_line_rules(str: &str) -> impl Iterator<Item = InlineElement> + '_ {
     "
     );
 
-    // const BRACES: &[char] = &['{', '}'];
-
     let color_blocks = get_color_blocks(str);
     let size_blocks = get_size_blocks(str, &color_blocks);
-    let color_swithces = get_color_switches(str, &color_blocks, &size_blocks);
-    let _size_switches = get_size_switches(str, &color_blocks, &size_blocks, &color_swithces);
+    let color_switches = get_color_switches(str, &color_blocks, &size_blocks);
+    let size_switches = get_size_switches(str, &color_blocks, &size_blocks, &color_switches);
     let (inses, dels) = get_format_ranges(str, regex!("%{2,}"));
     let (ems, strongs) = get_format_ranges(str, regex!("'{2,}"));
 
+    use InlineToken::{StyleEnd, StyleStart};
+    use StyleKind::*;
+    use StyleSpecifierStart::*;
+
+    // TODO [perf] due to the lifetime constraint, we have to temporarily store this in a vec
+    let other_matches = regex
+        .captures_iter(str)
+        .remove_overlapping(color_blocks.iter().flat_map(|x| [&x.kw, &x.mid, &x.close]))
+        .remove_overlapping(size_blocks.iter().flat_map(|x| [&x.kw, &x.mid, &x.close]))
+        .remove_overlapping(color_switches.iter().flat_map(|x| [&x.kw, &x.delim]))
+        .remove_overlapping(size_switches.iter().flat_map(|x| [&x.kw, &x.delim]))
+        .remove_overlapping(inses.iter().flat_map(|x| [&x.start, &x.end]))
+        .remove_overlapping(dels.iter().flat_map(|x| [&x.start, &x.end]))
+        .remove_overlapping(ems.iter().flat_map(|x| [&x.start, &x.end]))
+        .remove_overlapping(strongs.iter().flat_map(|x| [&x.start, &x.end]))
+        .collect_vec();
+
+    // lexicographical order of the first element
+    let cmp =
+        |x: &(Range<usize>, _), y: &(Range<usize>, _)| (x.0.start, x.0.end) < (y.0.start, y.0.end);
+
+    other_matches
+        .into_iter()
+        .map(|x| (x.start_pos()..x.end_pos(), match_to_token(x)))
+        .merge_by(
+            color_blocks.into_iter().flat_map(|x| {
+                [
+                    (x.kw, ColorBlock.into()),
+                    (x.mid, StyleStart(Span)),
+                    (x.close, StyleEnd(Span)),
+                ]
+            }),
+            cmp,
+        )
+        .merge_by(
+            size_blocks.into_iter().flat_map(|x| {
+                [
+                    (x.kw, SizeBlock.into()),
+                    (x.mid, StyleStart(Span)),
+                    (x.close, StyleEnd(Span)),
+                ]
+            }),
+            cmp,
+        )
+        .merge_by(
+            color_switches.into_iter().flat_map(|x| {
+                [
+                    (x.kw, ColorSwitch.into()),
+                    (x.delim, StyleStart(Span)),
+                    (x.end..x.end, StyleEnd(Span)),
+                ]
+            }),
+            cmp,
+        )
+        .merge_by(
+            size_switches.into_iter().flat_map(|x| {
+                [
+                    (x.kw, SizeSwitch.into()),
+                    (x.delim, StyleStart(Span)),
+                    (x.end..x.end, StyleEnd(Span)),
+                ]
+            }),
+            cmp,
+        )
+        .merge_by(
+            inses
+                .into_iter()
+                .flat_map(|x| [(x.start, StyleStart(Ins)), (x.end, StyleEnd(Ins))]),
+            cmp,
+        )
+        .merge_by(
+            dels.into_iter()
+                .flat_map(|x| [(x.start, StyleStart(Del)), (x.end, StyleEnd(Del))]),
+            cmp,
+        )
+        .merge_by(
+            ems.into_iter()
+                .flat_map(|x| [(x.start, StyleStart(Em)), (x.end, StyleEnd(Em))]),
+            cmp,
+        )
+        .merge_by(
+            strongs
+                .into_iter()
+                .flat_map(|x| [(x.start, StyleStart(Strong)), (x.end, StyleEnd(Strong))]),
+            cmp,
+        )
+        .map(|x| x.1)
+}
+
+fn match_to_token(captures: Captures) -> InlineToken {
+    use FaceMark::*;
+    use InlineToken as IT;
+    use MobileEmoji::*;
+    use PushButton::*;
+
     static ENTITY_MAP: Lazy<HashMap<&str, &Entity>> =
         once_cell::sync::Lazy::new(|| ENTITIES.iter().map(|e| (e.entity, e)).collect());
-    regex
-        .captures_iter(str)
-        .match_components(str)
-        .map(|m| match m {
-            MatchComponent::Between(s) => s.to_owned().into(),
-            MatchComponent::Match(captures) => {
-                let as_charcode = |a: Result<u32, _>| match html_charcode(a.unwrap_or(u32::MAX)) {
-                    Ok(c) => InlineElement::SpecialChar(c.into()),
-                    Err(HtmlCharcodeError::Replace) => {
-                        InlineElement::SpecialChar(SpecialChar::ReplacementCharacter)
-                    }
-                    Err(HtmlCharcodeError::AsIs) => {
-                        captures.get(0).unwrap().as_str().to_owned().into()
-                    }
-                };
-                if let Some(entity_decimal) = captures.name("entity_decimal") {
-                    as_charcode(entity_decimal.as_str().parse())
-                } else if let Some(entity_hex) = captures.name("entity_hex") {
-                    as_charcode(u32::from_str_radix(entity_hex.as_str(), 16))
-                } else if let Some(entity_named) = captures.name("entity_named") {
-                    let entity = *ENTITY_MAP.get(entity_named.as_str()).unwrap();
-                    InlineElement::SpecialChar(entity.into())
-                } else if captures.name("newline").is_some() {
-                    InlineElement::NewLine
-                } else {
-                    unreachable!("Guarded by regex")
-                }
-            }
-        })
+
+    let as_charcode = |a: Result<u32, _>| match html_charcode(a.unwrap_or(u32::MAX)) {
+        Ok(c) => IT::SpecialChar(c.into()),
+        Err(HtmlCharcodeError::Replace) => IT::SpecialChar(SpecialChar::ReplacementCharacter),
+        Err(HtmlCharcodeError::AsIs) => captures.get(0).unwrap().as_str().to_owned().into(),
+    };
+
+    let has_match = |s| captures.name(s).is_some();
+
+    if let Some(entity_decimal) = captures.name("entity_decimal") {
+        as_charcode(entity_decimal.as_str().parse())
+    } else if let Some(entity_hex) = captures.name("entity_hex") {
+        as_charcode(u32::from_str_radix(entity_hex.as_str(), 16))
+    } else if let Some(entity_named) = captures.name("entity_named") {
+        let entity = *ENTITY_MAP.get(entity_named.as_str()).unwrap();
+        IT::SpecialChar(entity.into())
+    } else if has_match("newline") {
+        IT::NewLine
+    } else if any(["face_smile0", "face_smile1", "face_smile2"], has_match) {
+        Smile.into()
+    } else if any(
+        ["face_bigsmile0", "face_bigsmile1", "face_bigsmile2"],
+        has_match,
+    ) {
+        BigSmile.into()
+    } else if any(["face_huh0", "face_huh1", "face_huh2"], has_match) {
+        Huh.into()
+    } else if any(["face_oh0", "face_oh1", "face_oh2", "face_oh3"], has_match) {
+        Oh.into()
+    } else if any(["face_wink0", "face_wink1", "face_wink2"], has_match) {
+        Wink.into()
+    } else if any(
+        ["face_sad0", "face_sad1", "face_sad2", "face_sad3"],
+        has_match,
+    ) {
+        Sad.into()
+    } else if has_match("face_heart0") {
+        Heart.into()
+    } else if any(
+        ["face_worried0", "face_worried1", "face_worried2"],
+        has_match,
+    ) {
+        Worried.into()
+    } else {
+        match () {
+            _ if has_match("mobile_0") => Pb0.into(),
+            _ if has_match("mobile_1") => Pb1.into(),
+            _ if has_match("mobile_2") => Pb2.into(),
+            _ if has_match("mobile_3") => Pb3.into(),
+            _ if has_match("mobile_4") => Pb4.into(),
+            _ if has_match("mobile_5") => Pb5.into(),
+            _ if has_match("mobile_6") => Pb6.into(),
+            _ if has_match("mobile_7") => Pb7.into(),
+            _ if has_match("mobile_8") => Pb8.into(),
+            _ if has_match("mobile_9") => Pb9.into(),
+            _ if has_match("mobile_h") => PbHash.into(),
+            _ if has_match("amp_zzz") => Zzz.into(),
+            _ if has_match("amp_man") => Man.into(),
+            _ if has_match("amp_clock") => Clock.into(),
+            _ if has_match("amp_mail") => Mail.into(),
+            _ if has_match("amp_mailto") => MailTo.into(),
+            _ if has_match("amp_phone") => Phone.into(),
+            _ if has_match("amp_phoneto") => PhoneTo.into(),
+            _ if has_match("amp_faxto") => FaxTo.into(),
+            _ => unreachable!("Guarded by regex"),
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -1224,17 +1427,21 @@ fn get_format_ranges(str: &str, regex: &Regex) -> (Vec<FormatRange>, Vec<FormatR
         .collect_vec();
     let mut res = (vec![], vec![]);
     for (res, len) in zip([&mut res.0, &mut res.1], [3, 2]) {
-        for i in 1..positions.len() - 1 {
-            let (bef, aft) = positions.split_at_mut(i);
-            let (bef, aft) = (bef.last_mut().unwrap(), aft.first_mut().unwrap()); // Always exist
-            if bef.len() >= len && aft.len() >= len {
-                res.push(FormatRange {
-                    start: bef.end - len..bef.end,
-                    end: aft.start..aft.start + len,
-                });
-                bef.end -= len;
-                aft.start += len;
-            }
+        dbg!(&positions, len);
+        let find = |slice: &[Range<usize>]| (0..slice.len()).find(|&i| slice[i].len() >= len);
+        let mut s = find(&positions);
+        while let Some(i) = s {
+            let (bef, aft) = positions.split_at_mut(i + 1);
+            let bef = &mut bef[i];
+            let j = unwrap_break!(find(aft));
+            let aft = &mut aft[j];
+            res.push(FormatRange {
+                start: bef.end - len..bef.end,
+                end: aft.start..aft.start + len,
+            });
+            bef.end -= len;
+            aft.start += len;
+            s = find(&positions[i + j + 1..]).map(|k| i + j + 1 + k);
         }
     }
     res
@@ -1627,6 +1834,20 @@ mod test {
         let str = "%% %%% %% %%%";
         let (tri, dva) = get_format_ranges(str, regex);
         assert_ranges!(tri, [(3..6, 10..13)]);
-        assert_ranges!(dva, [(0..2, 17..19)]);
+        assert_ranges!(dva, [(0..2, 7..9)]);
+
+        //                   1         2         3         4         5         6         7         8
+        //         012345678901234567890123456789012345678901234567890123456789012345678901234567890
+        let str = "%% %%% %%% %%";
+        let (tri, dva) = get_format_ranges(str, regex);
+        assert_ranges!(tri, [(3..6, 7..10)]);
+        assert_ranges!(dva, [(0..2, 11..13)]);
+
+        //                   1         2         3         4         5         6         7         8
+        //         012345678901234567890123456789012345678901234567890123456789012345678901234567890
+        let str = "%%% %%%% %%% %%%";
+        let (tri, dva) = get_format_ranges(str, regex);
+        assert_ranges!(tri, [(0..3, 4..7), (9..12, 13..16)]);
+        assert_ranges!(dva, []);
     }
 }

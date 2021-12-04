@@ -1,4 +1,4 @@
-use std::mem::replace;
+use std::{mem::replace, ops::Range};
 
 pub trait MatchLike {
     fn start_pos(&self) -> usize;
@@ -29,6 +29,26 @@ impl MatchLike for pcre::Match<'_> {
 
     fn end_pos(&self) -> usize {
         self.group_end(0)
+    }
+}
+impl MatchLike for Range<usize> {
+    fn start_pos(&self) -> usize {
+        self.start
+    }
+    fn end_pos(&self) -> usize {
+        self.end
+    }
+}
+
+impl<T> MatchLike for &T
+where
+    T: MatchLike,
+{
+    fn start_pos(&self) -> usize {
+        T::start_pos(self)
+    }
+    fn end_pos(&self) -> usize {
+        T::end_pos(self)
     }
 }
 
