@@ -20,11 +20,6 @@ jobs:
       - name: View env value
         run: echo ${{ env.save_file_name }}
 
-      - name: (Tmp) output some data
-        run: |
-          mkdir dump-data
-          echo "This is a test!" > dump-data/test.txt
-
       - name: Execute download
         run: cargo run --bin download-backup --release
 
