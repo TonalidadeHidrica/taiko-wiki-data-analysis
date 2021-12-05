@@ -34,16 +34,22 @@ jobs:
           echo ${{ env.save_file_name }}
           echo ${{ env.save_date }}
 
-      - name: Execute download
+      # - name: Execute download
+      #   run: |
+      #     cd main
+      #     cargo run --bin download-backup --release
+
+      - name: (tmp) touch 
         run: |
           cd main
-          cargo run --bin download-backup --release
+          mkdir -p dump-data/wiki/
+          touch dump-data/wiki/test.txt
 
       - name: Upload generated file
         uses: actions/upload-artifact@v1
         with:
           name: ${{ env.save_file_name }}
-          path: dump-data
+          path: wiki/dump-data
 
       - name: Push the downloaded files
         run: |
