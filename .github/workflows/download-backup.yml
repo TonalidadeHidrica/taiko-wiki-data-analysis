@@ -34,16 +34,10 @@ jobs:
           echo ${{ env.save_file_name }}
           echo ${{ env.save_date }}
 
-      # - name: Execute download
-      #   run: |
-      #     cd main
-      #     cargo run --bin download-backup --release
-
-      - name: (tmp) touch 
+      - name: Execute download
         run: |
           cd main
-          mkdir -p dump-data/wiki/
-          touch dump-data/wiki/test.txt
+          cargo run --bin download-backup --release
 
       - name: Upload generated file
         uses: actions/upload-artifact@v2
