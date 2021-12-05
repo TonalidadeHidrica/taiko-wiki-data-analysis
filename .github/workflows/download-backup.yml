@@ -12,19 +12,42 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Set up Git repository
-        uses: actions/checkout@v1
+        uses: actions/checkout@v2
+        with:
+          path: "main"
+
+      - name: Clone wiki
+        uses: actions/checkout@v2
+        with:
+          repository: 'TonalidadeHidrica/taiko-wiki'
+          path: "wiki"
+          ssh-key: "${{ secrets.WIKI_DEPLOY_TOKEN }}"
 
       - name: Determine the filename to save
-        run: "echo save_file_name=taiko-wiki-dump-`date '+%Y%m%d-%H%M%S'`.tar.gz >> $GITHUB_ENV"
+        run: "echo save_file_name=taiko-wiki-dump-`date '+%Y-%m-%dT%H:%M:%SZ'` >> $GITHUB_ENV"
 
       - name: View env value
         run: echo ${{ env.save_file_name }}
 
       - name: Execute download
-        run: cargo run --bin download-backup --release
+        run: |
+          cd main
+          cargo run --bin download-backup --release
 
       - name: Upload generated file
         uses: actions/upload-artifact@v1
         with:
           name: ${{ env.save_file_name }}
           path: dump-data
+
+      - name: Push the downloaded files
+        run: |
+          cd wiki
+          rm -rf wiki
+          cp -R ../main/dump-data/wiki .
+          git add .
+          if ! git diff-index --quiet HEAD --
+          then
+            git -c user.name="bot" -c user.email="<>" commit --author="bot <>" --message="Test commit as of ${date}"
+          fi
+          git push
