@@ -49,7 +49,7 @@ jobs:
         uses: actions/upload-artifact@v1
         with:
           name: ${{ env.save_file_name }}
-          path: wiki/dump-data
+          path: main/dump-data
 
       - name: Push the downloaded files
         run: |
