@@ -27,7 +27,7 @@ jobs:
         run: |
           save_date=`date '+%Y-%m-%dT%H:%M:%SZ'`
           echo save_date=$save_date >> $GITHUB_ENV
-          echo save_file_name=taiko-wiki-dump-$save_date >> $GITHUB_ENV
+          echo save_file_name=taiko-wiki-dump-`date '+%Y%m%d-%H%M%S'` >> $GITHUB_ENV
 
       - name: View env value
         run: |
@@ -46,10 +46,10 @@ jobs:
           touch dump-data/wiki/test.txt
 
       - name: Upload generated file
-        uses: actions/upload-artifact@v1
+        uses: actions/upload-artifact@v2
         with:
           name: ${{ env.save_file_name }}
-          path: main/dump-data
+          path: main/dump-data/
 
       - name: Push the downloaded files
         run: |
