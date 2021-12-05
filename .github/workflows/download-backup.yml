@@ -24,10 +24,14 @@ jobs:
           ssh-key: "${{ secrets.WIKI_DEPLOY_TOKEN }}"
 
       - name: Determine the filename to save
-        run: "echo save_file_name=taiko-wiki-dump-`date '+%Y-%m-%dT%H:%M:%SZ'` >> $GITHUB_ENV"
+        run: |
+          echo save_date=`date '+%Y-%m-%dT%H:%M:%SZ'` >> $GITHUB_ENV
+          echo save_file_name=taiko-wiki-dump-${{ env.save_date }} >> $GITHUB_ENV
 
       - name: View env value
-        run: echo ${{ env.save_file_name }}
+        run: |
+          echo ${{ env.save_file_name }}
+          echo ${{ env.save_date }}
 
       - name: Execute download
         run: |
@@ -48,6 +52,6 @@ jobs:
           git add .
           if ! git diff-index --quiet HEAD --
           then
-            git -c user.name="bot" -c user.email="<>" commit --author="bot <>" --message="Test commit as of ${date}"
+            git -c user.name="bot" -c user.email="<>" commit --author="bot <>" --message="Wiki snapshot as of ${{ env.save_date }}"
           fi
           git push
