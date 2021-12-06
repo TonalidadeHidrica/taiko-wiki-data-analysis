@@ -167,7 +167,7 @@ impl<'a, T, I> Deref for Peeked<'a, T, I> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use itertools::Itertools;
 
     use crate::my_itertools::{MyItertools, PeekableExt};

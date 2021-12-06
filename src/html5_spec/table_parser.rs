@@ -295,9 +295,8 @@ fn algorithm_for_assigning_header_cells<T>(_context: &mut Context<T>) {
 
 #[cfg(test)]
 mod tests {
-    use super::CellKind::*;
-    use crate::html5_table_parser::{
-        CellKind, CellLike, RowLike, TRGroupLike, TableChild, TableLike,
+    use super::{
+        CellKind::{self, *}, CellLike, RowLike, TRGroupLike, TableChild, TableLike,
     };
     use itertools::Itertools;
 

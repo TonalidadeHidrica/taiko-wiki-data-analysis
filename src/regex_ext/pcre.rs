@@ -60,7 +60,7 @@ mod inner {
 pub use inner::MatchExt;
 
 #[cfg(test)]
-mod test {
+mod tests {
     use pcre::{CompileOption::*, Pcre};
 
     use super::MatchExt;

@@ -118,7 +118,7 @@ pub trait MatchIterator<'s, M: MatchLike>: Iterator<Item = M> + Sized {
 impl<'s, I: Iterator> MatchIterator<'s, I::Item> for I where I::Item: MatchLike {}
 
 #[cfg(test)]
-mod test {
+mod tests {
     use itertools::Itertools;
     use regex::Regex;
 

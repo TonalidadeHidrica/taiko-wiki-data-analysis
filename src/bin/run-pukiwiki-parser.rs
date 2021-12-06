@@ -8,7 +8,7 @@ use encoding_rs::EUC_JP;
 use fs_err::File;
 use glob::glob;
 use indicatif::ProgressIterator;
-use taiko_wiki_data_analysis::pukiwiki_parser::parser::{parse, Config};
+use taiko_wiki_data_analysis::pukiwiki_parser::{parse, Config};
 
 #[derive(Parser)]
 struct Opts {
