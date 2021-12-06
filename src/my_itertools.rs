@@ -168,8 +168,6 @@ impl<'a, T, I> Deref for Peeked<'a, T, I> {
 
 #[cfg(test)]
 mod test {
-    use std::ops::Range;
-
     use itertools::Itertools;
 
     use crate::my_itertools::{MyItertools, PeekableExt};
