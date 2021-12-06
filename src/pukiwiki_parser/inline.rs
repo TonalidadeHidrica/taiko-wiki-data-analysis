@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use getset::{Getters, CopyGetters};
+
 use crate::{
     pcre, regex,
     regex_ext::{
@@ -25,37 +27,44 @@ pub enum InlineElement {
     InterWikiNameUrl(InterWikiNameUrl),
     PageLink(PageLink),
 }
-#[derive(Debug)]
+#[derive(Debug, Getters)]
+#[getset(get="pub")]
 pub struct InlinePlugin {
     plugin_name: String,
     parameter: Option<String>,
     body: Option<Vec<InlineElement>>,
 }
-#[derive(Debug)]
+#[derive(Debug, Getters)]
+#[getset(get="pub")]
 pub struct Footnote {
     contents: Vec<InlineElement>,
 }
-#[derive(Debug)]
+#[derive(Debug, Getters)]
+#[getset(get="pub")]
 pub struct Link {
     url: String,
     caption: Vec<InlineElement>,
 }
-#[derive(Debug)]
+#[derive(Debug, Getters)]
+#[getset(get="pub")]
 pub struct InterWikiUrl {
     url: String,
     caption: Vec<InlineElement>,
 }
-#[derive(Debug)]
+#[derive(Debug, Getters)]
+#[getset(get="pub")]
 pub struct MailTo {
     address: String,
     caption: Vec<InlineElement>,
 }
-#[derive(Debug)]
+#[derive(Debug, Getters)]
+#[getset(get="pub")]
 pub struct Image {
     src: String,
     alt: String,
 }
-#[derive(Debug)]
+#[derive(Debug, Getters)]
+#[getset(get="pub")]
 pub struct InterWikiNameUrl {
     destination: InterWikiDestination,
     anchor: Option<String>,
@@ -459,11 +468,15 @@ mod tests {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Getters, CopyGetters)]
 pub struct PageLink {
+    #[getset(get="pub")]
     page: Option<String>,
+    #[getset(get="pub")]
     contents: Vec<InlineElement>,
+    #[getset(get="pub")]
     anchor: Option<String>,
+    #[getset(get_copy="pub")]
     is_auto_link: bool,
 }
 fn make_page_link(

@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use either::*;
 use itertools::Itertools;
 use regex::Regex;
+use getset::{Getters, CopyGetters};
 
 use crate::{
     either_ext::{into_common_2, EitherExt},
@@ -102,11 +103,13 @@ fn exist_plugin_convert(_plugin_name: &str) -> bool {
 }
 
 // Inline elements
-#[derive(Debug)]
+#[derive(Debug, Getters)]
+#[getset(get="pub")]
 pub struct Inline<'a> {
     // src: Cow<'a, str>,
     elements: Vec<InlineElement>,
     /// Maybe we are going to use this lifetime afterwards
+    #[getset(skip)]
     _phantom: std::marker::PhantomData<fn() -> &'a ()>,
 }
 impl<'a> Inline<'a> {
@@ -127,6 +130,7 @@ impl<'a> Inline<'a> {
 // Paragraph: blank-line-separated sentences
 #[derive(Debug)]
 pub struct Paragraph<'a> {
+    #[allow(unused)]
     param: (),
     text: Option<Inline<'a>>,
 }
@@ -146,14 +150,17 @@ impl<'a> Paragraph<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Getters, CopyGetters)]
 pub struct Heading<'a> {
+    #[getset(get_copy="pub")]
     level: HeadingLevel,
+    #[getset(get_copy="pub")]
     tag: Option<&'a str>,
+    #[getset(get="pub")]
     text: FactoryInlineRet<'a>,
 }
-#[derive(Debug)]
-enum HeadingLevel {
+#[derive(Clone, Copy, Debug)]
+pub enum HeadingLevel {
     H2,
     H3,
     H4,
@@ -202,14 +209,17 @@ impl<'a> Heading<'a> {
 #[derive(Debug)]
 pub struct HRule;
 
-#[derive(Debug)]
+#[derive(Debug, Getters, CopyGetters)]
 pub struct List<'a> {
+    #[getset(get_copy="pub")]
     kind: ListKind,
+    #[getset(get_copy="pub")]
     level: usize,
+    #[getset(get="pub")]
     text: FactoryInlineRet<'a>,
 }
 #[derive(Clone, Copy, Debug)]
-enum ListKind {
+pub enum ListKind {
     Ordered,
     Unordered,
 }
@@ -228,10 +238,13 @@ impl<'a> List<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Getters, CopyGetters)]
 pub struct DList<'a> {
+    #[getset(get_copy="pub")]
     level: usize,
+    #[getset(get="pub")]
     word: FactoryInlineRet<'a>,
+    #[getset(get="pub")]
     desc: Option<FactoryInlineRet<'a>>,
 }
 impl<'a> DList<'a> {
@@ -246,14 +259,17 @@ impl<'a> DList<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Getters, CopyGetters)]
 pub struct BQuote<'a> {
+    #[getset(get_copy="pub")]
     level: usize,
+    #[getset(get="pub")]
     kind: BQuoteKind,
+    #[getset(get="pub")]
     text: Option<FactoryInlineRet<'a>>,
 }
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-enum BQuoteKind {
+pub enum BQuoteKind {
     Start,
     End,
 }
@@ -274,18 +290,20 @@ impl<'a> BQuote<'a> {
 }
 
 #[derive(Debug)]
-enum TableCell<'a> {
+pub enum TableCell<'a> {
     MergeRight,
     MergeAbove,
     Content(TableContent<'a>),
 }
-#[derive(Debug)]
-struct TableContent<'a> {
+#[derive(Debug, Getters, CopyGetters)]
+pub struct TableContent<'a> {
+    #[getset(get_copy="pub")]
     is_header: bool,
+    #[getset(get="pub")]
     child: TableContentChild<'a>,
 }
 #[derive(Debug)]
-enum TableContentChild<'a> {
+pub enum TableContentChild<'a> {
     Paragraph(Paragraph<'a>),
     Inline(Inline<'a>),
     Div(Div<'a>),
@@ -372,7 +390,8 @@ impl<'a> TableCell<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Getters)]
+#[getset(get="pub")]
 pub struct Table<'a> {
     cells: Vec<TableCell<'a>>,
 }
@@ -393,13 +412,15 @@ impl<'a> Table<'a> {
     }
 }
 
-#[derive(Debug)]
-struct YTableCell<'a> {
+#[derive(Debug, Getters, CopyGetters)]
+pub struct YTableCell<'a> {
+    #[getset(get_copy="pub")]
     align: Align,
+    #[getset(get="pub")]
     content: YTableContent<'a>,
 }
 #[derive(Debug)]
-enum YTableContent<'a> {
+pub enum YTableContent<'a> {
     MergeRight,
     Content(Vec<InlineElement>, std::marker::PhantomData<fn() -> &'a ()>),
 }
@@ -424,7 +445,8 @@ impl<'a> YTableCell<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Getters)]
+#[getset(get="pub")]
 pub struct YTable<'a> {
     cells: Vec<YTableCell<'a>>,
 }
@@ -439,7 +461,8 @@ impl<'a> YTable<'a> {
 }
 
 // ' 'Space-beginning sentence
-#[derive(Debug)]
+#[derive(Debug, CopyGetters)]
+#[getset(get_copy="pub")]
 pub struct Pre<'a> {
     text: &'a str,
 }
@@ -454,10 +477,13 @@ impl<'a> Pre<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Getters, CopyGetters)]
 pub struct Div<'a> {
+    #[getset(get_copy="pub")]
     plugin_name: &'a str,
+    #[getset(get_copy="pub")]
     args: Option<&'a str>,
+    #[getset(get="pub")]
     remaining_lines: Vec<&'a str>,
 }
 impl<'a> Div<'a> {

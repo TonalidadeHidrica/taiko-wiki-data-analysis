@@ -14,6 +14,7 @@ use std::{error, fs};
 const URL_PREFIX: &str = "http://www.wikihouse.com/taiko/";
 
 #[derive(Debug)]
+#[allow(unused)]
 struct WikiFileEntry {
     title: String,
     last_update: String,
