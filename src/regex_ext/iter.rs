@@ -3,8 +3,6 @@ use std::{
     ops::{Index, Range},
 };
 
-use len_trait::len::Len;
-
 pub trait MatchLike {
     fn start_pos(&self) -> usize;
     fn end_pos(&self) -> usize;
@@ -63,10 +61,11 @@ pub enum MatchComponent<M, B> {
     Between(B),
 }
 #[derive(Clone, Debug)]
-pub struct MatchComponentIterator<'s, S: ?Sized, I, M> {
-    str: &'s S,
+pub struct MatchComponentIterator<S, I, M> {
+    str: S,
     iter: I,
     pos: usize,
+    len: usize,
     state: Next<M>,
 }
 #[derive(Clone, Debug)]
@@ -76,24 +75,24 @@ enum Next<M> {
     Finished,
     Dummy,
 }
-impl<'s, S: ?Sized, I, M> Iterator for MatchComponentIterator<'s, S, I, M>
+impl<S, I, M> Iterator for MatchComponentIterator<S, I, M>
 where
     I: Iterator<Item = M>,
     M: MatchLike,
-    S: Len + Index<Range<usize>>,
+    S: IndexOwned<Range<usize>, Output=S> + Copy,
 {
-    type Item = MatchComponent<I::Item, &'s <S as Index<Range<usize>>>::Output>;
+    type Item = MatchComponent<I::Item, S>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match replace(&mut self.state, Next::Dummy) {
             Next::Str(next) => {
-                let end = next.as_ref().map_or(self.str.len(), |x| x.start_pos());
+                let end = next.as_ref().map_or(self.len, |x| x.start_pos());
                 self.state = match next {
                     Some(next) => Next::Match(next),
                     None => Next::Finished,
                 };
                 if self.pos < end {
-                    Some(MatchComponent::Between(&self.str[self.pos..end]))
+                    Some(MatchComponent::Between(self.str.index_owned(self.pos..end)))
                 } else {
                     self.next()
                 }
@@ -109,19 +108,33 @@ where
     }
 }
 
-pub trait MatchIterator<'s, S: ?Sized, M: MatchLike>: Iterator<Item = M> + Sized {
-    fn match_components(mut self, str: &'s S) -> MatchComponentIterator<'s, S, Self, M> {
+pub trait IndexOwned<I> {
+    type Output;
+    fn index_owned(self, index: I) -> Self::Output;
+}
+
+impl <'a, I> IndexOwned<I> for &'a str where str: Index<I, Output=str> {
+    type Output = &'a str;
+
+    fn index_owned(self, index: I) -> Self::Output {
+        &self[index]
+    }
+}
+
+pub trait MatchIterator<S, M: MatchLike>: Iterator<Item = M> + Sized {
+    fn match_components(mut self, str: S, len: usize) -> MatchComponentIterator<S, Self, M> {
         let next = self.next();
         MatchComponentIterator {
             str,
             iter: self,
             pos: 0,
             state: Next::Str(next),
+            len
         }
     }
 }
 
-impl<'s, S: ?Sized, I: Iterator> MatchIterator<'s, S, I::Item> for I where I::Item: MatchLike {}
+impl<S, I: Iterator> MatchIterator<S, I::Item> for I where I::Item: MatchLike {}
 
 #[cfg(test)]
 mod tests {
@@ -140,7 +153,7 @@ mod tests {
         let haystack = "hogeABCtesttestDEFghi";
         let matches = regex.find_iter(haystack).collect_vec();
         assert_eq!(matches.len(), 2);
-        let mut it = regex.find_iter(haystack).match_components(haystack);
+        let mut it = regex.find_iter(haystack).match_components(haystack, haystack.len());
         assert_eq!(it.next(), Some(Between("hoge")));
         assert_eq!(it.next(), Some(CMatch(matches[0])));
         assert_eq!(it.next(), Some(Between("testtest")));
@@ -151,7 +164,7 @@ mod tests {
         let haystack = "ABCtestSERVALcatDEF";
         let matches = regex.find_iter(haystack).collect_vec();
         assert_eq!(matches.len(), 4);
-        let mut it = regex.find_iter(haystack).match_components(haystack);
+        let mut it = regex.find_iter(haystack).match_components(haystack, haystack.len());
         assert_eq!(it.next(), Some(CMatch(matches[0])));
         assert_eq!(it.next(), Some(Between("test")));
         assert_eq!(it.next(), Some(CMatch(matches[1])));

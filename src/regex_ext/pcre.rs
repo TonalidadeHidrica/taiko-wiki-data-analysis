@@ -15,6 +15,11 @@ macro_rules! pcre {
         let pattern = &$crate::pcre!($pattern $(, $($flags)*)?);
         pattern.with(|pat| pat.$method($($args),*))
     }};
+
+    ($pattern: expr $(, $($flags: ident)*)? => ($arg: expr).$method: ident) => {{
+        let pattern = &$crate::pcre!($pattern $(, $($flags)*)?);
+        pattern.with(|pat| $arg.$method(pat))
+    }};
 }
 
 #[macro_export]
@@ -40,22 +45,25 @@ macro_rules! flags_add {
 }
 
 mod inner {
+    use std::ops::Range;
+
     use pcre::Match;
 
     pub trait MatchExt {
-        fn group_opt<'a>(&self, n: usize) -> Option<&'a str>
-        where
-            Self: 'a;
+        fn group_opt_helper<'a>(&self, n: usize) -> Option<(&'a str, Range<usize>)> where Self: 'a;
+
+        fn group_opt<'a>(&self, n: usize) -> Option<&'a str> where Self: 'a {
+            Some(self.group_opt_helper(n)?.0)
+        }
     }
 
     impl<'s> MatchExt for Match<'s> {
-        fn group_opt<'a>(&self, n: usize) -> Option<&'s str>
-        where
-            Self: 'a,
-        {
-            (!self.group_start(n) > 0).then(|| self.group(n))
+        fn group_opt_helper<'a>(&self, n: usize) -> Option<(&'s str, Range<usize>)> where Self: 'a {
+            let start = self.group_start(n);
+            (!start > 0).then(|| (self.group(n), start..self.group_end(n)))
         }
     }
+
 }
 pub use inner::MatchExt;
 

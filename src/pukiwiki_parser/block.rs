@@ -1,9 +1,7 @@
-use std::borrow::Cow;
-
 use either::*;
+use getset::{CopyGetters, Getters};
 use itertools::Itertools;
 use regex::Regex;
-use getset::{Getters, CopyGetters};
 
 use crate::{
     either_ext::{into_common_2, EitherExt},
@@ -15,12 +13,12 @@ use super::{
     config::Config,
     inline::{make_link, InlineElement},
     php::as_numeric,
-    str_ext::{strip_prefix_cow, strip_prefix_n, trim_cow},
+    str_ext::{strip_prefix_n, TwoStr},
 };
 
 type FactoryInlineRet<'a> = Either<Paragraph<'a>, Inline<'a>>;
-fn factory_inline<'a>(text: Cow<'a, str>, config: &Config) -> FactoryInlineRet<'a> {
-    if let Some(text) = strip_prefix_cow(&text, '~') {
+fn factory_inline<'a>(text: TwoStr<'a>, config: &Config) -> FactoryInlineRet<'a> {
+    if let Some(text) = text.strip_prefix('~') {
         Left(Paragraph::new(text, (), config))
     } else {
         Right(Inline::new(text, config))
@@ -104,26 +102,19 @@ fn exist_plugin_convert(_plugin_name: &str) -> bool {
 
 // Inline elements
 #[derive(Debug, Getters)]
-#[getset(get="pub")]
+#[getset(get = "pub")]
 pub struct Inline<'a> {
-    // src: Cow<'a, str>,
-    elements: Vec<InlineElement>,
-    /// Maybe we are going to use this lifetime afterwards
-    #[getset(skip)]
-    _phantom: std::marker::PhantomData<fn() -> &'a ()>,
+    elements: Vec<InlineElement<'a>>,
 }
 impl<'a> Inline<'a> {
-    fn new(text: Cow<'a, str>, config: &Config) -> Self {
+    fn new(text: TwoStr<'a>, config: &Config) -> Self {
         let elements = if text.starts_with('\n') {
-            vec![trim_cow(&text).into_owned().into()]
+            text.into_iter().map(Into::into).collect_vec()
         } else {
             // TODO: [compl] trim??
             make_link(text, config)
         };
-        Self {
-            _phantom: Default::default(),
-            elements,
-        }
+        Self { elements }
     }
 }
 
@@ -135,9 +126,9 @@ pub struct Paragraph<'a> {
     text: Option<Inline<'a>>,
 }
 impl<'a> Paragraph<'a> {
-    fn new(text: Cow<'a, str>, param: (), config: &Config) -> Self {
+    fn new(text: TwoStr<'a>, param: (), config: &Config) -> Self {
         let text = text.is_empty().then(|| {
-            let text = strip_prefix_cow(&text, '~').unwrap_or(text);
+            let text = text.strip_prefix('~').unwrap_or(text);
             // The original code:
             // - first checks if it starts with '~';
             // - if so, replace the first character with ' ' and pass it to Factory_Inline;
@@ -152,11 +143,11 @@ impl<'a> Paragraph<'a> {
 
 #[derive(Debug, Getters, CopyGetters)]
 pub struct Heading<'a> {
-    #[getset(get_copy="pub")]
+    #[getset(get_copy = "pub")]
     level: HeadingLevel,
-    #[getset(get_copy="pub")]
+    #[getset(get_copy = "pub")]
     tag: Option<&'a str>,
-    #[getset(get="pub")]
+    #[getset(get = "pub")]
     text: FactoryInlineRet<'a>,
 }
 #[derive(Clone, Copy, Debug)]
@@ -194,10 +185,10 @@ impl<'a> Heading<'a> {
             Some(capture) => {
                 let entire = capture.get(0).unwrap();
                 let tag = capture.get(1).unwrap();
-                let text = String::from(&text[..entire.start()]) + &text[entire.end()..];
-                (Cow::Owned(text), Some(tag.as_str()))
+                let text = TwoStr::split_concat(text, entire.range());
+                (text, Some(tag.as_str()))
             }
-            None => (Cow::Borrowed(text), None),
+            None => (text.into(), None),
         };
 
         // insert to self
@@ -211,11 +202,11 @@ pub struct HRule;
 
 #[derive(Debug, Getters, CopyGetters)]
 pub struct List<'a> {
-    #[getset(get_copy="pub")]
+    #[getset(get_copy = "pub")]
     kind: ListKind,
-    #[getset(get_copy="pub")]
+    #[getset(get_copy = "pub")]
     level: usize,
-    #[getset(get="pub")]
+    #[getset(get = "pub")]
     text: FactoryInlineRet<'a>,
 }
 #[derive(Clone, Copy, Debug)]
@@ -240,11 +231,11 @@ impl<'a> List<'a> {
 
 #[derive(Debug, Getters, CopyGetters)]
 pub struct DList<'a> {
-    #[getset(get_copy="pub")]
+    #[getset(get_copy = "pub")]
     level: usize,
-    #[getset(get="pub")]
+    #[getset(get = "pub")]
     word: FactoryInlineRet<'a>,
-    #[getset(get="pub")]
+    #[getset(get = "pub")]
     desc: Option<FactoryInlineRet<'a>>,
 }
 impl<'a> DList<'a> {
@@ -261,11 +252,11 @@ impl<'a> DList<'a> {
 
 #[derive(Debug, Getters, CopyGetters)]
 pub struct BQuote<'a> {
-    #[getset(get_copy="pub")]
+    #[getset(get_copy = "pub")]
     level: usize,
-    #[getset(get="pub")]
+    #[getset(get = "pub")]
     kind: BQuoteKind,
-    #[getset(get="pub")]
+    #[getset(get = "pub")]
     text: Option<FactoryInlineRet<'a>>,
 }
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -297,9 +288,9 @@ pub enum TableCell<'a> {
 }
 #[derive(Debug, Getters, CopyGetters)]
 pub struct TableContent<'a> {
-    #[getset(get_copy="pub")]
+    #[getset(get_copy = "pub")]
     is_header: bool,
-    #[getset(get="pub")]
+    #[getset(get = "pub")]
     child: TableContentChild<'a>,
 }
 #[derive(Debug)]
@@ -391,7 +382,7 @@ impl<'a> TableCell<'a> {
 }
 
 #[derive(Debug, Getters)]
-#[getset(get="pub")]
+#[getset(get = "pub")]
 pub struct Table<'a> {
     cells: Vec<TableCell<'a>>,
 }
@@ -414,15 +405,15 @@ impl<'a> Table<'a> {
 
 #[derive(Debug, Getters, CopyGetters)]
 pub struct YTableCell<'a> {
-    #[getset(get_copy="pub")]
+    #[getset(get_copy = "pub")]
     align: Align,
-    #[getset(get="pub")]
+    #[getset(get = "pub")]
     content: YTableContent<'a>,
 }
 #[derive(Debug)]
 pub enum YTableContent<'a> {
     MergeRight,
-    Content(Vec<InlineElement>, std::marker::PhantomData<fn() -> &'a ()>),
+    Content(Vec<InlineElement<'a>>),
 }
 impl<'a> YTableCell<'a> {
     fn new(text: &'a str, config: &Config) -> Self {
@@ -439,14 +430,14 @@ impl<'a> YTableCell<'a> {
             YTableContent::MergeRight
         } else {
             #[allow(clippy::unit_arg)]
-            YTableContent::Content(make_link(text.into(), config), Default::default())
+            YTableContent::Content(make_link(text.into(), config))
         };
         Self { align, content }
     }
 }
 
 #[derive(Debug, Getters)]
-#[getset(get="pub")]
+#[getset(get = "pub")]
 pub struct YTable<'a> {
     cells: Vec<YTableCell<'a>>,
 }
@@ -462,7 +453,7 @@ impl<'a> YTable<'a> {
 
 // ' 'Space-beginning sentence
 #[derive(Debug, CopyGetters)]
-#[getset(get_copy="pub")]
+#[getset(get_copy = "pub")]
 pub struct Pre<'a> {
     text: &'a str,
 }
@@ -479,11 +470,11 @@ impl<'a> Pre<'a> {
 
 #[derive(Debug, Getters, CopyGetters)]
 pub struct Div<'a> {
-    #[getset(get_copy="pub")]
+    #[getset(get_copy = "pub")]
     plugin_name: &'a str,
-    #[getset(get_copy="pub")]
+    #[getset(get_copy = "pub")]
     args: Option<&'a str>,
-    #[getset(get="pub")]
+    #[getset(get = "pub")]
     remaining_lines: Vec<&'a str>,
 }
 impl<'a> Div<'a> {
