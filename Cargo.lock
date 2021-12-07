@@ -953,6 +953,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
+name = "len-trait"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "723558ab8acaa07cb831b424cd164b587ddc1648b34748a30953c404e9a4a65b"
+dependencies = [
+ "cfg-if 0.1.10",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.109"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1824,6 +1833,7 @@ dependencies = [
  "indicatif",
  "itertools",
  "lazy_static",
+ "len-trait",
  "loop_unwrap",
  "num-derive",
  "num-traits",

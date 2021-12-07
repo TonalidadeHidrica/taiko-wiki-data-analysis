@@ -1,4 +1,9 @@
-use std::{mem::replace, ops::Range};
+use std::{
+    mem::replace,
+    ops::{Index, Range},
+};
+
+use len_trait::len::Len;
 
 pub trait MatchLike {
     fn start_pos(&self) -> usize;
@@ -53,13 +58,13 @@ where
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
-pub enum MatchComponent<'s, M> {
+pub enum MatchComponent<M, B> {
     Match(M),
-    Between(&'s str),
+    Between(B),
 }
 #[derive(Clone, Debug)]
-pub struct MatchComponentIterator<'s, I, M> {
-    str: &'s str,
+pub struct MatchComponentIterator<'s, S: ?Sized, I, M> {
+    str: &'s S,
     iter: I,
     pos: usize,
     state: Next<M>,
@@ -71,12 +76,13 @@ enum Next<M> {
     Finished,
     Dummy,
 }
-impl<'s, I, M> Iterator for MatchComponentIterator<'s, I, M>
+impl<'s, S: ?Sized, I, M> Iterator for MatchComponentIterator<'s, S, I, M>
 where
     I: Iterator<Item = M>,
     M: MatchLike,
+    S: Len + Index<Range<usize>>,
 {
-    type Item = MatchComponent<'s, I::Item>;
+    type Item = MatchComponent<I::Item, &'s <S as Index<Range<usize>>>::Output>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match replace(&mut self.state, Next::Dummy) {
@@ -103,8 +109,8 @@ where
     }
 }
 
-pub trait MatchIterator<'s, M: MatchLike>: Iterator<Item = M> + Sized {
-    fn match_components(mut self, str: &'s str) -> MatchComponentIterator<'s, Self, M> {
+pub trait MatchIterator<'s, S: ?Sized, M: MatchLike>: Iterator<Item = M> + Sized {
+    fn match_components(mut self, str: &'s S) -> MatchComponentIterator<'s, S, Self, M> {
         let next = self.next();
         MatchComponentIterator {
             str,
@@ -115,7 +121,7 @@ pub trait MatchIterator<'s, M: MatchLike>: Iterator<Item = M> + Sized {
     }
 }
 
-impl<'s, I: Iterator> MatchIterator<'s, I::Item> for I where I::Item: MatchLike {}
+impl<'s, S: ?Sized, I: Iterator> MatchIterator<'s, S, I::Item> for I where I::Item: MatchLike {}
 
 #[cfg(test)]
 mod tests {
