@@ -1,10 +1,10 @@
 #[derive(Debug)]
-pub struct Config {
+pub struct ParserConfig {
     pub disable_multiline_plugin: bool,
     pub disable_inline_image_from_uri: bool,
     pub preformat_ltrim: bool,
 }
-impl Default for Config {
+impl Default for ParserConfig {
     fn default() -> Self {
         // Default value in pukiwiki.ini.php
         Self {
@@ -14,7 +14,7 @@ impl Default for Config {
         }
     }
 }
-impl Config {
+impl ParserConfig {
     pub fn taiko_wiki() -> Self {
         Self {
             disable_multiline_plugin: false,

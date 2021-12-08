@@ -1,6 +1,7 @@
 /// - This string does not contain `\n`.
 /// - In this string, newline is represented by `\r`.
 /// - It ends with `\r`.
+#[derive(Default)]
 pub struct PreprocessedString(String);
 impl FromIterator<char> for PreprocessedString {
     fn from_iter<T: IntoIterator<Item = char>>(iter: T) -> Self {

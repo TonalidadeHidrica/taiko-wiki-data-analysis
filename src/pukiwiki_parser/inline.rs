@@ -8,7 +8,7 @@ use crate::{
 };
 
 use super::{
-    config::Config,
+    config::ParserConfig,
     str_ext::{TwoStr, TwoStrConcatRef},
     token::{make_line_rules, InlineToken},
 };
@@ -112,7 +112,7 @@ impl<'a> From<&'a str> for InlineElement<'a> {
 
 pub(super) fn make_link<'a, 'o>(
     text: TwoStrConcatRef<'a, 'o>,
-    config: &Config,
+    config: &ParserConfig,
 ) -> Vec<InlineElement<'o>> {
     pcre!(
         r###"
@@ -406,7 +406,7 @@ impl<T> From<MaybeImgUrl<T>> for MaybeConcat<T> {
 fn parse_alias<'o, 'a>(
     name: impl Into<MaybeConcat<TwoStrConcatRef<'o, 'a>>>,
     alias: TwoStrConcatRef<'o, 'a>,
-    config: &Config,
+    config: &ParserConfig,
 ) -> Vec<InlineElement<'a>> {
     let name = name.into();
     if config.disable_inline_image_from_uri {
@@ -448,7 +448,7 @@ fn get_interwiki_url<'a, 'o>(
 mod tests {
     use assert_matches::assert_matches;
 
-    use crate::pukiwiki_parser::config::Config;
+    use crate::pukiwiki_parser::config::ParserConfig;
 
     use super::{
         is_url, make_link, InlineElement as IE, InlinePlugin, InlineToken as IT, InterWikiUrl,
@@ -465,7 +465,7 @@ mod tests {
 
     #[test]
     fn test_make_link() {
-        let config = Config::default();
+        let config = ParserConfig::default();
 
         // Inline plugin
         let res = make_link("&ref(image.png,nolink);".into(), &config);

@@ -9,7 +9,7 @@ use crate::{
 };
 
 use super::{
-    config::Config,
+    config::ParserConfig,
     inline::{make_link, InlineElement},
     php::as_numeric,
     preprocess::PreprocessedString,
@@ -17,7 +17,7 @@ use super::{
 };
 
 type FactoryInlineRet<'a> = Either<Paragraph<'a>, Inline<'a>>;
-fn factory_inline<'a>(text: TwoStr<'a>, config: &Config) -> FactoryInlineRet<'a> {
+fn factory_inline<'a>(text: TwoStr<'a>, config: &ParserConfig) -> FactoryInlineRet<'a> {
     if let Some(text) = text.strip_prefix('~') {
         Left(Paragraph::new(text, (), config))
     } else {
@@ -25,7 +25,10 @@ fn factory_inline<'a>(text: TwoStr<'a>, config: &Config) -> FactoryInlineRet<'a>
     }
 }
 
-fn factory_dlist<'a>(text: &'a str, config: &Config) -> Either<DList<'a>, FactoryInlineRet<'a>> {
+fn factory_dlist<'a>(
+    text: &'a str,
+    config: &ParserConfig,
+) -> Either<DList<'a>, FactoryInlineRet<'a>> {
     if let Some((a, b)) = text.split_once('|') {
         Left(DList::new(a, b, config))
     } else {
@@ -33,7 +36,10 @@ fn factory_dlist<'a>(text: &'a str, config: &Config) -> Either<DList<'a>, Factor
     }
 }
 
-fn factory_table<'a>(text: &'a str, config: &Config) -> Either<Table<'a>, FactoryInlineRet<'a>> {
+fn factory_table<'a>(
+    text: &'a str,
+    config: &ParserConfig,
+) -> Either<Table<'a>, FactoryInlineRet<'a>> {
     if let Some(out) = regex!(r"^\|(.+)\|([hHfFcC]?)$").captures(text) {
         let kind = match &out[2] {
             "h" | "H" => TableRowKind::Header,
@@ -49,7 +55,10 @@ fn factory_table<'a>(text: &'a str, config: &Config) -> Either<Table<'a>, Factor
 }
 
 /// panics if text is empty
-fn factory_ytable<'a>(text: &'a str, config: &Config) -> Either<YTable<'a>, FactoryInlineRet<'a>> {
+fn factory_ytable<'a>(
+    text: &'a str,
+    config: &ParserConfig,
+) -> Either<YTable<'a>, FactoryInlineRet<'a>> {
     if text == "," {
         Right(factory_inline(text.into(), config))
     } else {
@@ -57,7 +66,7 @@ fn factory_ytable<'a>(text: &'a str, config: &Config) -> Either<YTable<'a>, Fact
     }
 }
 
-fn factory_div<'a>(text: &'a str, config: &Config) -> Either<Div<'a>, Paragraph<'a>> {
+fn factory_div<'a>(text: &'a str, config: &ParserConfig) -> Either<Div<'a>, Paragraph<'a>> {
     #[allow(clippy::collapsible_else_if)]
     if config.disable_multiline_plugin {
         if let Some(captures) = regex!(r"^\#([^\(]+)(?:\((.*)\))?").captures(text) {
@@ -98,7 +107,7 @@ pub struct Inline<'a> {
     elements: Vec<InlineElement<'a>>,
 }
 impl<'a> Inline<'a> {
-    fn new(text: TwoStr<'a>, config: &Config) -> Self {
+    fn new(text: TwoStr<'a>, config: &ParserConfig) -> Self {
         let elements = if text.starts_with('\n') {
             text.into_iter().map(Into::into).collect_vec()
         } else {
@@ -117,7 +126,7 @@ pub struct Paragraph<'a> {
     text: Option<Inline<'a>>,
 }
 impl<'a> Paragraph<'a> {
-    fn new(text: TwoStr<'a>, param: (), config: &Config) -> Self {
+    fn new(text: TwoStr<'a>, param: (), config: &ParserConfig) -> Self {
         let text = text.is_empty().then(|| {
             let text = text.strip_prefix('~').unwrap_or(text);
             // The original code:
@@ -150,7 +159,7 @@ pub enum HeadingLevel {
 impl<'a> Heading<'a> {
     /// # panics
     /// If text does not start with `*`
-    fn new(text: &'a str, config: &Config) -> Self {
+    fn new(text: &'a str, config: &ParserConfig) -> Self {
         let (level, text) = strip_prefix_n(text, '*', 3);
         let level = match level {
             0 => panic!("Should call with a text starting with '*'"),
@@ -208,7 +217,7 @@ pub enum ListKind {
 impl<'a> List<'a> {
     // # Panics
     // If `text` does not start with specific character determined by `kind`
-    fn new(text: &'a str, kind: ListKind, config: &Config) -> Self {
+    fn new(text: &'a str, kind: ListKind, config: &ParserConfig) -> Self {
         let strip_char = match kind {
             ListKind::Ordered => '+',
             ListKind::Unordered => '-',
@@ -232,7 +241,7 @@ pub struct DList<'a> {
 impl<'a> DList<'a> {
     // # Panics
     // If `word` does not start with `:`.
-    fn new(word: &'a str, desc: &'a str, config: &Config) -> Self {
+    fn new(word: &'a str, desc: &'a str, config: &ParserConfig) -> Self {
         let (level, word) = strip_prefix_n(word, ':', 3);
         assert!(level > 0);
         let word = factory_inline(word.into(), config);
@@ -258,7 +267,7 @@ pub enum BQuoteKind {
 impl<'a> BQuote<'a> {
     // # Panics
     // If `text` does not start with `<` or `>`.
-    fn new(text: &'a str, kind: BQuoteKind, config: &Config) -> Self {
+    fn new(text: &'a str, kind: BQuoteKind, config: &ParserConfig) -> Self {
         let strip_char = match kind {
             BQuoteKind::Start => '>',
             BQuoteKind::End => '<',
@@ -275,7 +284,7 @@ impl<'a> BQuote<'a> {
 pub enum TableCell<'a> {
     MergeRight,
     MergeAbove,
-    Content(TableContent<'a>),
+    Content(TableContent<'a>, TableStyle<'a>),
 }
 #[derive(Debug, Getters, CopyGetters)]
 pub struct TableContent<'a> {
@@ -292,7 +301,7 @@ pub enum TableContentChild<'a> {
     Empty,
 }
 #[derive(Clone, Default, Debug)]
-struct TableStyle<'s> {
+pub struct TableStyle<'s> {
     align: Option<Align>,
     color: Option<CssColor<'s>>,
     background_color: Option<CssColor<'s>>,
@@ -302,7 +311,7 @@ struct TableStyle<'s> {
 #[derive(Clone, Debug)]
 struct CssColor<'s>(&'s str);
 impl<'a> TableCell<'a> {
-    fn new(mut text: &'a str, is_template: bool, config: &Config) -> Self {
+    fn new(mut text: &'a str, is_template: bool, config: &ParserConfig) -> Self {
         let mut style = TableStyle::default();
         loop {
             let captures = match regex!(
@@ -342,6 +351,7 @@ impl<'a> TableCell<'a> {
                 // In original code, it is always marked as a non-empty value.
                 style.width = Some(value);
             }
+            text = "";
         }
 
         if text == ">" {
@@ -367,30 +377,32 @@ impl<'a> TableCell<'a> {
                     Right(inl) => TableContentChild::Inline(inl),
                 }
             };
-            TableCell::Content(TableContent { is_header, child })
+            TableCell::Content(TableContent { is_header, child }, style)
         }
     }
 }
 
-#[derive(Debug, Getters)]
-#[getset(get = "pub")]
+#[derive(Debug, Getters, CopyGetters)]
 pub struct Table<'a> {
+    #[getset(get = "pub")]
     cells: Vec<TableCell<'a>>,
+    #[getset(get_copy = "pub")]
+    kind: TableRowKind,
 }
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
-enum TableRowKind {
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum TableRowKind {
     Header,
     Footer,
     Formatter,
     Nothing,
 }
 impl<'a> Table<'a> {
-    fn new(cells: &'a str, kind: TableRowKind, config: &Config) -> Self {
+    fn new(cells: &'a str, kind: TableRowKind, config: &ParserConfig) -> Self {
         let cells = cells
             .split('|')
             .map(|cell| TableCell::new(cell, kind == TableRowKind::Formatter, config))
             .collect();
-        Self { cells }
+        Self { cells, kind }
     }
 }
 
@@ -407,7 +419,7 @@ pub enum YTableContent<'a> {
     Content(Vec<InlineElement<'a>>),
 }
 impl<'a> YTableCell<'a> {
-    fn new(text: &'a str, config: &Config) -> Self {
+    fn new(text: &'a str, config: &ParserConfig) -> Self {
         let align = match (
             text.starts_with(char::is_whitespace),
             text.ends_with(char::is_whitespace),
@@ -433,7 +445,7 @@ pub struct YTable<'a> {
     cells: Vec<YTableCell<'a>>,
 }
 impl<'a> YTable<'a> {
-    fn new(elements: impl IntoIterator<Item = &'a str>, config: &Config) -> Self {
+    fn new(elements: impl IntoIterator<Item = &'a str>, config: &ParserConfig) -> Self {
         let cells = elements
             .into_iter()
             .map(|text| YTableCell::new(text, config))
@@ -506,7 +518,7 @@ pub enum Element<'a> {
     Clear,                    // insert to toplevel
 }
 
-pub fn parse<'a>(config: &Config, lines: &'a PreprocessedString) -> Vec<Element<'a>> {
+pub fn parse<'a>(config: &ParserConfig, lines: &'a PreprocessedString) -> Vec<Element<'a>> {
     let lines = lines.as_ref();
     let mut ret: Vec<Element> = vec![];
     let mut newlines = lines

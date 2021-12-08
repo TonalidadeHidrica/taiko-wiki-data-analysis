@@ -8,7 +8,7 @@ use encoding_rs::EUC_JP;
 use fs_err::File;
 use glob::glob;
 use indicatif::ProgressIterator;
-use taiko_wiki_data_analysis::pukiwiki_parser::{parse, preprocess::PreprocessedString, Config};
+use taiko_wiki_data_analysis::pukiwiki_parser::{parse, ParserConfig, PreprocessedString};
 
 #[derive(Parser)]
 struct Opts {
@@ -29,7 +29,7 @@ fn run(file: impl Into<PathBuf>, quiet: bool) -> anyhow::Result<()> {
         return Ok(()); // Actually I want to return error, but who cares
     }
     let str = PreprocessedString::from_iter(str.chars());
-    let parsed = parse(&Config::taiko_wiki(), &str);
+    let parsed = parse(&ParserConfig::taiko_wiki(), &str);
     if !quiet {
         println!("{:#?}", parsed);
     }
