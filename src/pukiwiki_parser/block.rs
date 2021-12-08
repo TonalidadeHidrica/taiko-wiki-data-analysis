@@ -5,7 +5,6 @@ use regex::Regex;
 
 use crate::{
     either_ext::{into_common_2, EitherExt},
-    my_itertools::MyItertools,
     regex,
 };
 
@@ -13,6 +12,7 @@ use super::{
     config::Config,
     inline::{make_link, InlineElement},
     php::as_numeric,
+    preprocess::PreprocessedString,
     str_ext::{strip_prefix_n, TwoStr},
 };
 
@@ -57,19 +57,14 @@ fn factory_ytable<'a>(text: &'a str, config: &Config) -> Either<YTable<'a>, Fact
     }
 }
 
-fn factory_div<'a>(
-    text: &'a str,
-    remaining_lines: impl IntoIterator<Item = &'a str>,
-    disable_multiline_plugin: bool,
-    config: &Config,
-) -> Either<Div<'a>, Paragraph<'a>> {
+fn factory_div<'a>(text: &'a str, config: &Config) -> Either<Div<'a>, Paragraph<'a>> {
     #[allow(clippy::collapsible_else_if)]
-    if disable_multiline_plugin {
+    if config.disable_multiline_plugin {
         if let Some(captures) = regex!(r"^\#([^\(]+)(?:\((.*)\))?").captures(text) {
             let name = captures.get(1).unwrap().as_str();
             let args = captures.get(2).map(|x| x.as_str());
             if exist_plugin_convert(name) {
-                return Left(Div::new(name, args, vec![]));
+                return Left(Div::new(name, args, ""));
             }
         }
     } else {
@@ -79,23 +74,18 @@ fn factory_div<'a>(
                 let args = captures.get(2).map(|x| x.as_str());
                 let brace_len = captures[3].len();
                 if brace_len == 0 {
-                    return Left(Div::new(name, args, vec![]));
-                } else {
-                    // TODO [compl] only if the last line starts with the same numeber of }'s
-                    return Left(Div::new(name, args, remaining_lines));
+                    return Left(Div::new(name, args, ""));
+                } else if let Some(close) =
+                    Regex::new(&format!(r"\{{{{0}}\s*\r(.*)\r\}}{{{0}}}", brace_len))
+                        .unwrap()
+                        .captures(text)
+                {
+                    return Left(Div::new(name, args, close.get(1).unwrap().as_str()));
                 }
             }
         }
     }
-    // TODO: [perf] is this the most efficient way?
-    let text = remaining_lines
-        .into_iter()
-        .fold(text.to_owned(), |mut x, y| {
-            x += y;
-            x
-        });
-    todo!("{:?} {:?}", text, config)
-    // Right(Paragraph::new(text.into(), (), config))
+    Right(Paragraph::new(text.into(), (), config))
 }
 fn exist_plugin_convert(_plugin_name: &str) -> bool {
     true
@@ -364,7 +354,7 @@ impl<'a> TableCell<'a> {
                 None => (text, false),
             };
             let child = if text.starts_with('#') {
-                match factory_div(text, [], config.disable_multiline_plugin, config) {
+                match factory_div(text, config) {
                     Left(div) => TableContentChild::Div(div),
                     Right(para) => match para.text {
                         Some(inline) => TableContentChild::Inline(inline),
@@ -476,15 +466,10 @@ pub struct Div<'a> {
     #[getset(get_copy = "pub")]
     args: Option<&'a str>,
     #[getset(get = "pub")]
-    remaining_lines: Vec<&'a str>,
+    remaining_lines: &'a str,
 }
 impl<'a> Div<'a> {
-    fn new(
-        plugin_name: &'a str,
-        args: Option<&'a str>,
-        remaining_lines: impl IntoIterator<Item = &'a str>,
-    ) -> Self {
-        let remaining_lines = remaining_lines.into_iter().collect_vec();
+    fn new(plugin_name: &'a str, args: Option<&'a str>, remaining_lines: &'a str) -> Self {
         Self {
             plugin_name,
             args,
@@ -521,11 +506,17 @@ pub enum Element<'a> {
     Clear,                    // insert to toplevel
 }
 
-pub fn parse<'a>(config: &Config, lines: &'a str) -> Vec<Element<'a>> {
-    let mut lines = lines.split('\n');
+pub fn parse<'a>(config: &Config, lines: &'a PreprocessedString) -> Vec<Element<'a>> {
+    let lines = lines.as_ref();
     let mut ret: Vec<Element> = vec![];
-    while let Some(line) = lines.next() {
-        let line = &line;
+    let mut newlines = lines
+        .char_indices()
+        .filter_map(|(i, c)| (c == '\r').then(|| i));
+    let mut pos = 0;
+    while let Some(end) = newlines.next() {
+        let start = pos;
+        let line = &lines[start..end];
+        pos = end + 1;
 
         // Escape comments
         if line.starts_with("//") {
@@ -567,19 +558,17 @@ pub fn parse<'a>(config: &Config, lines: &'a str) -> Vec<Element<'a>> {
         if !config.disable_multiline_plugin {
             if let Some(res) = regex!(r"^#[^{]+(\{\{+)\s*$").captures(line) {
                 let regex = Regex::new(&format!(r"\}}{{{}}}", res[1].len())).unwrap();
-                let remaining_lines = lines
+                let plugin_end = regex.find_at(lines, pos).map_or(lines.len(), |x| x.end());
+                let plugin_line_end = newlines
                     .by_ref()
-                    .map(|line| line.trim_end_matches(NEWLINES))
-                    .take_until(move |line| regex.is_match(line));
+                    .find(|&x| x >= plugin_end)
+                    .map_or(lines.len(), |x| x + 1);
+                pos = plugin_line_end;
+
                 // In this case, the line will always processed by #factory_inline.
                 // The last ~ is ignored because in original source it is converted to \r
                 // which is indistinguishable from terminal newline (maybe)
-                let res = factory_div(
-                    line,
-                    remaining_lines,
-                    config.disable_multiline_plugin,
-                    config,
-                );
+                let res = factory_div(&lines[start..plugin_line_end], config);
                 ret.push(res.into_common());
                 // That's why we may skip remaining process in this loop
                 continue;
@@ -614,9 +603,7 @@ pub fn parse<'a>(config: &Config, lines: &'a str) -> Vec<Element<'a>> {
             Some(':') => into_common_2(factory_dlist(line, config)),
             Some('|') => into_common_2(factory_table(line, config)),
             Some(',') => into_common_2(factory_ytable(line, config)),
-            Some('#') => {
-                factory_div(line, [], config.disable_multiline_plugin, config).into_common()
-            }
+            Some('#') => factory_div(line, config).into_common(),
             _ => factory_inline(line.into(), config).into_common(),
         };
         ret.push(res);
