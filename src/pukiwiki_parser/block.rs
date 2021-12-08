@@ -300,16 +300,21 @@ pub enum TableContentChild<'a> {
     Div(Div<'a>),
     Empty,
 }
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, Getters, CopyGetters)]
 pub struct TableStyle<'s> {
+    #[getset(get_copy = "pub")]
     align: Option<Align>,
+    #[getset(get = "pub")]
     color: Option<CssColor<'s>>,
+    #[getset(get = "pub")]
     background_color: Option<CssColor<'s>>,
+    #[getset(get_copy = "pub")]
     size: Option<u64>,
+    #[getset(get_copy = "pub")]
     width: Option<f64>,
 }
 #[derive(Clone, Debug)]
-struct CssColor<'s>(&'s str);
+pub struct CssColor<'s>(&'s str);
 impl<'a> TableCell<'a> {
     fn new(mut text: &'a str, is_template: bool, config: &ParserConfig) -> Self {
         let mut style = TableStyle::default();

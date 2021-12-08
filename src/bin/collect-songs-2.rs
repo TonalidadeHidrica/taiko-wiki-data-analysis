@@ -1,9 +1,10 @@
 use std::path::PathBuf;
 
+use anyhow::anyhow;
 use clap::Parser;
 use itertools::Itertools;
 use taiko_wiki_data_analysis::pukiwiki_parser::{
-    block::{Element, TableRowKind},
+    block::{Element, TableCell, TableRowKind},
     reader::{ReaderConfig, WikiReader},
     ParserConfig,
 };
@@ -21,8 +22,24 @@ fn main() -> anyhow::Result<()> {
         parser_config: ParserConfig::taiko_wiki(),
     });
     let elements = reader.read(&opts.page_name)?;
-    let table = largest_table(&elements);
-    println!("{:?}", table);
+    let rows = largest_table(&elements)
+        .ok_or(anyhow!("There is no table in this page"))?
+        .iter()
+        .filter_map(|x| match x {
+            Element::Table(table) if table.kind() != TableRowKind::Formatter => Some(table),
+            _ => None,
+        });
+    for row in rows {
+        match &row.cells()[..] {
+            [rem @ .., TableCell::Content(value, style)]
+                if rem.iter().all(|x| matches!(x, TableCell::MergeRight)) =>
+            {
+                let color = style.background_color();
+                dbg!(color, value);
+            }
+            _ => {}
+        }
+    }
     Ok(())
 }
 
