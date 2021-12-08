@@ -95,23 +95,11 @@ pub enum StyleKind {
     Em,
     Strong,
 }
-// std::iter::FlatMap<regex_ext::iter::MatchComponentIterator<'_, pukiwiki_parser::str_ext::TwoStrConcatRef<'_, '_>, itertools::MergeBy<itertools::MergeBy<itertools::MergeBy<itertools::MergeBy<itertools::MergeBy<itertools::MergeBy<itertools::MergeBy<itertools::MergeBy<std::iter::Map<std::vec::IntoIter<pukiwiki_parser::str_ext::regex::Captures<'_, '_>>, [closure@src/pukiwiki_parser/token.rs:196:14: 196:65]>, std::iter::FlatMap<std::vec::IntoIter<pukiwiki_parser::token::BraceBlock>, [(std::ops::Range<usize>, pukiwiki_parser::token::InlineToken<'_>); 3], [closure@src/pukiwiki_parser/token.rs:198:47: 204:14]>, [closure@src/pukiwiki_parser/token.rs:192:9: 192:99]>, std::iter::FlatMap<std::vec::IntoIter<pukiwiki_parser::token::BraceBlock>, [(std::ops::Range<usize>, pukiwiki_parser::token::InlineToken<'_>); 3], [closure@src/pukiwiki_parser/token.rs:208:46: 214:14]>, [closure@src/pukiwiki_parser/token.rs:192:9: 192:99]>, std::iter::FlatMap<std::vec::IntoIter<pukiwiki_parser::token::FormatSwitch>, [(std::ops::Range<usize>, pukiwiki_parser::token::InlineToken<'_>); 3], [closure@src/pukiwiki_parser/token.rs:218:49: 224:14]>, [closure@src/pukiwiki_parser/token.rs:192:9: 192:99]>, std::iter::FlatMap<std::vec::IntoIter<pukiwiki_parser::token::FormatSwitch>, [(std::ops::Range<usize>, pukiwiki_parser::token::InlineToken<'_>); 3], [closure@src/pukiwiki_parser/token.rs:228:48: 234:14]>, [closure@src/pukiwiki_parser/token.rs:192:9: 192:99]>, std::iter::FlatMap<std::vec::IntoIter<pukiwiki_parser::token::FormatRange>, [(std::ops::Range<usize>, pukiwiki_parser::token::InlineToken<'_>); 2], [closure@src/pukiwiki_parser/token.rs:240:27: 240:83]>, [closure@src/pukiwiki_parser/token.rs:192:9: 192:99]>, std::iter::FlatMap<std::vec::IntoIter<pukiwiki_parser::token::FormatRange>, [(std::ops::Range<usize>, pukiwiki_parser::token::InlineToken<'_>); 2], [closure@src/pukiwiki_parser/token.rs:245:27: 245:83]>, [closure@src/pukiwiki_parser/token.rs:192:9: 192:99]>, std::iter::FlatMap<std::vec::IntoIter<pukiwiki_parser::token::FormatRange>, [(std::ops::Range<usize>, pukiwiki_parser::token::InlineToken<'_>); 2], [closure@src/pukiwiki_parser/token.rs:250:27: 250:81]>, [closure@src/pukiwiki_parser/token.rs:192:9: 192:99]>, std::iter::FlatMap<std::vec::IntoIter<pukiwiki_parser::token::FormatRange>, [(std::ops::Range<usize>, pukiwiki_parser::token::InlineToken<'_>); 2], [closure@src/pukiwiki_parser/token.rs:256:27: 256:89]>, [closure@src/pukiwiki_parser/token.rs:192:9: 192:99]>, (std::ops::Range<usize>, pukiwiki_parser::token::InlineToken<'_>)>, itertools::Either<std::iter::Map<pukiwiki_parser::str_ext::TwoStrIter<'_>, fn(&str) -> pukiwiki_parser::token::InlineToken<'_> {pukiwiki_parser::token::InlineToken::<'_>::Str}>, std::array::IntoIter<pukiwiki_parser::token::InlineToken<'_>, 1_usize>>, [closure@src/pukiwiki_parser/token.rs:260:19: 265:10]>
-pub(crate) fn make_line_rules<'a, 'o>(
-    str: TwoStrConcatRef<'a, 'o>,
-) ->
-// std::iter::FlatMap<
-    MatchComponentIterator<
-        TwoStrConcatRef<'a, 'o>,
-        Map<std::vec::IntoIter<Captures<'a, 'o>>, impl FnMut(Captures<'a, 'o>) -> (Range<usize>, InlineToken<'o>)>,
-        (Range<usize>, InlineToken<'o>),
-    >
-// ,
-//     Either<Map<TwoStrIter<'a>, fn(&'a str) -> InlineToken<'a>>, std::array::IntoIter<InlineToken<'o>, 1>>,
-//     impl FnMut(
-//         MatchComponent<(Range<usize>, InlineToken), TwoStrConcatRef>,
-//     ) -> Either<Map<TwoStrIter<'a>, fn(&'a str) -> InlineToken<'a>>, std::array::IntoIter<InlineToken<'o>, 1>>,
-// > 
+pub(crate) fn make_line_rules<'a: 'ret, 'o: 'ret, 'ret>(
+    str: impl Into<TwoStrConcatRef<'a, 'o>>,
+) -> impl Iterator<Item=InlineToken<'o>> + 'ret
 {
+    let str = str.into();
     let regex = regex!(
         r"(?x)
         &(?:
@@ -209,73 +197,73 @@ pub(crate) fn make_line_rules<'a, 'o>(
     other_matches
         .into_iter()
         .map(|x| (x.start_pos()..x.end_pos(), match_to_token(x)))
-        // .merge_by(
-        //     color_blocks.into_iter().flat_map(|x| {
-        //         [
-        //             (x.kw, ColorBlock.into()),
-        //             (x.mid, StyleStart(Span)),
-        //             (x.close, StyleEnd(Span)),
-        //         ]
-        //     }),
-        //     cmp,
-        // )
-        // .merge_by(
-        //     size_blocks.into_iter().flat_map(|x| {
-        //         [
-        //             (x.kw, SizeBlock.into()),
-        //             (x.mid, StyleStart(Span)),
-        //             (x.close, StyleEnd(Span)),
-        //         ]
-        //     }),
-        //     cmp,
-        // )
-        // .merge_by(
-        //     color_switches.into_iter().flat_map(|x| {
-        //         [
-        //             (x.kw, ColorSwitch.into()),
-        //             (x.delim, StyleStart(Span)),
-        //             (x.end..x.end, StyleEnd(Span)),
-        //         ]
-        //     }),
-        //     cmp,
-        // )
-        // .merge_by(
-        //     size_switches.into_iter().flat_map(|x| {
-        //         [
-        //             (x.kw, SizeSwitch.into()),
-        //             (x.delim, StyleStart(Span)),
-        //             (x.end..x.end, StyleEnd(Span)),
-        //         ]
-        //     }),
-        //     cmp,
-        // )
-        // .merge_by(
-        //     inses
-        //         .into_iter()
-        //         .flat_map(|x| [(x.start, StyleStart(Ins)), (x.end, StyleEnd(Ins))]),
-        //     cmp,
-        // )
-        // .merge_by(
-        //     dels.into_iter()
-        //         .flat_map(|x| [(x.start, StyleStart(Del)), (x.end, StyleEnd(Del))]),
-        //     cmp,
-        // )
-        // .merge_by(
-        //     ems.into_iter()
-        //         .flat_map(|x| [(x.start, StyleStart(Em)), (x.end, StyleEnd(Em))]),
-        //     cmp,
-        // )
-        // .merge_by(
-        //     strongs
-        //         .into_iter()
-        //         .flat_map(|x| [(x.start, StyleStart(Strong)), (x.end, StyleEnd(Strong))]),
-        //     cmp,
-        // )
+        .merge_by(
+            color_blocks.into_iter().flat_map(|x| {
+                [
+                    (x.kw, ColorBlock.into()),
+                    (x.mid, StyleStart(Span)),
+                    (x.close, StyleEnd(Span)),
+                ]
+            }),
+            cmp,
+        )
+        .merge_by(
+            size_blocks.into_iter().flat_map(|x| {
+                [
+                    (x.kw, SizeBlock.into()),
+                    (x.mid, StyleStart(Span)),
+                    (x.close, StyleEnd(Span)),
+                ]
+            }),
+            cmp,
+        )
+        .merge_by(
+            color_switches.into_iter().flat_map(|x| {
+                [
+                    (x.kw, ColorSwitch.into()),
+                    (x.delim, StyleStart(Span)),
+                    (x.end..x.end, StyleEnd(Span)),
+                ]
+            }),
+            cmp,
+        )
+        .merge_by(
+            size_switches.into_iter().flat_map(|x| {
+                [
+                    (x.kw, SizeSwitch.into()),
+                    (x.delim, StyleStart(Span)),
+                    (x.end..x.end, StyleEnd(Span)),
+                ]
+            }),
+            cmp,
+        )
+        .merge_by(
+            inses
+                .into_iter()
+                .flat_map(|x| [(x.start, StyleStart(Ins)), (x.end, StyleEnd(Ins))]),
+            cmp,
+        )
+        .merge_by(
+            dels.into_iter()
+                .flat_map(|x| [(x.start, StyleStart(Del)), (x.end, StyleEnd(Del))]),
+            cmp,
+        )
+        .merge_by(
+            ems.into_iter()
+                .flat_map(|x| [(x.start, StyleStart(Em)), (x.end, StyleEnd(Em))]),
+            cmp,
+        )
+        .merge_by(
+            strongs
+                .into_iter()
+                .flat_map(|x| [(x.start, StyleStart(Strong)), (x.end, StyleEnd(Strong))]),
+            cmp,
+        )
         .match_components(str, str.len())
-        // .flat_map(|x| match x {
-        //     MatchComponent::Between(s) => Left(TwoStr::from(s).into_iter().map(InlineToken::Str)),
-        //     MatchComponent::Match((_, token)) => Right([token].into_iter()),
-        // })
+        .flat_map(|x| match x {
+            MatchComponent::Between(s) => Left(TwoStr::from(s).into_iter().map(InlineToken::Str)),
+            MatchComponent::Match((_, token)) => Right([token].into_iter()),
+        })
 }
 
 impl<T> MatchLike for (Range<usize>, T) {

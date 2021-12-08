@@ -1,6 +1,6 @@
 use getset::{CopyGetters, Getters};
 use itertools::Itertools;
-use len_trait::Empty;
+use len_trait::{Empty, Len};
 
 use crate::{
     pcre, regex,
@@ -211,11 +211,11 @@ pub(super) fn make_link<'a>(text: TwoStr<'a>, config: &Config) -> Vec<InlineElem
         for groups in text
             .as_concat_ref()
             .pcre_matches(pattern)
-            .match_components(text.as_concat_ref(), text.len())
+            .match_components(text.as_concat_ref(), text.as_concat_ref().len())
         {
             let groups = match groups {
                 MatchComponent::Match(m) => m,
-                MatchComponent::Between(&str) => {
+                MatchComponent::Between(str) => {
                     res.extend(make_line_rules(str).map(InlineElement::InlineToken));
                     continue;
                 }

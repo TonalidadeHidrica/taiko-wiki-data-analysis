@@ -79,7 +79,7 @@ impl<S, I, M> Iterator for MatchComponentIterator<S, I, M>
 where
     I: Iterator<Item = M>,
     M: MatchLike,
-    S: IndexOwned<Range<usize>, Output=S> + Copy,
+    S: IndexOwned<Range<usize>, Output = S> + Copy,
 {
     type Item = MatchComponent<I::Item, S>;
 
@@ -113,7 +113,10 @@ pub trait IndexOwned<I> {
     fn index_owned(self, index: I) -> Self::Output;
 }
 
-impl <'a, I> IndexOwned<I> for &'a str where str: Index<I, Output=str> {
+impl<'a, I> IndexOwned<I> for &'a str
+where
+    str: Index<I, Output = str>,
+{
     type Output = &'a str;
 
     fn index_owned(self, index: I) -> Self::Output {
@@ -129,7 +132,7 @@ pub trait MatchIterator<S, M: MatchLike>: Iterator<Item = M> + Sized {
             iter: self,
             pos: 0,
             state: Next::Str(next),
-            len
+            len,
         }
     }
 }
@@ -153,7 +156,9 @@ mod tests {
         let haystack = "hogeABCtesttestDEFghi";
         let matches = regex.find_iter(haystack).collect_vec();
         assert_eq!(matches.len(), 2);
-        let mut it = regex.find_iter(haystack).match_components(haystack, haystack.len());
+        let mut it = regex
+            .find_iter(haystack)
+            .match_components(haystack, haystack.len());
         assert_eq!(it.next(), Some(Between("hoge")));
         assert_eq!(it.next(), Some(CMatch(matches[0])));
         assert_eq!(it.next(), Some(Between("testtest")));
@@ -164,7 +169,9 @@ mod tests {
         let haystack = "ABCtestSERVALcatDEF";
         let matches = regex.find_iter(haystack).collect_vec();
         assert_eq!(matches.len(), 4);
-        let mut it = regex.find_iter(haystack).match_components(haystack, haystack.len());
+        let mut it = regex
+            .find_iter(haystack)
+            .match_components(haystack, haystack.len());
         assert_eq!(it.next(), Some(CMatch(matches[0])));
         assert_eq!(it.next(), Some(Between("test")));
         assert_eq!(it.next(), Some(CMatch(matches[1])));
