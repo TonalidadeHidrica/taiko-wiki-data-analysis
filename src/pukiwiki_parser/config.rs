@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub struct Config {
     pub disable_multiline_plugin: bool,
     pub disable_inline_image_from_uri: bool,

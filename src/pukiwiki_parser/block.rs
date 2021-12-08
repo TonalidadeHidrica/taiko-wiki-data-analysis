@@ -94,7 +94,8 @@ fn factory_div<'a>(
             x += y;
             x
         });
-    Right(Paragraph::new(text.into(), (), config))
+    todo!("{:?} {:?}", text, config)
+    // Right(Paragraph::new(text.into(), (), config))
 }
 fn exist_plugin_convert(_plugin_name: &str) -> bool {
     true
@@ -112,7 +113,7 @@ impl<'a> Inline<'a> {
             text.into_iter().map(Into::into).collect_vec()
         } else {
             // TODO: [compl] trim??
-            make_link(text, config)
+            make_link(text.into_concat().as_concat_ref(), config)
         };
         Self { elements }
     }

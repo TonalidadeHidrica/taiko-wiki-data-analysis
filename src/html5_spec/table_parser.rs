@@ -296,7 +296,8 @@ fn algorithm_for_assigning_header_cells<T>(_context: &mut Context<T>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        CellKind::{self, *}, CellLike, RowLike, TRGroupLike, TableChild, TableLike,
+        CellKind::{self, *},
+        CellLike, RowLike, TRGroupLike, TableChild, TableLike,
     };
     use itertools::Itertools;
 

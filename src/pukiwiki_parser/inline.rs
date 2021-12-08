@@ -4,7 +4,7 @@ use len_trait::{Empty, Len};
 
 use crate::{
     pcre, regex,
-    regex_ext::iter::{MatchComponent, MatchIterator},
+    regex_ext::iter::{IndexOwned, MatchComponent, MatchIterator},
 };
 
 use super::{
@@ -110,8 +110,10 @@ impl<'a> From<&'a str> for InlineElement<'a> {
     }
 }
 
-pub(super) fn make_link<'a>(text: TwoStr<'a>, config: &Config) -> Vec<InlineElement<'a>> {
-    let text = text.into_concat();
+pub(super) fn make_link<'a, 'o>(
+    text: TwoStrConcatRef<'a, 'o>,
+    config: &Config,
+) -> Vec<InlineElement<'o>> {
     pcre!(
         r###"
             ( # Link_plugin (1)
@@ -209,9 +211,8 @@ pub(super) fn make_link<'a>(text: TwoStr<'a>, config: &Config) -> Vec<InlineElem
     .with(|pattern| {
         let mut res: Vec<InlineElement> = Vec::new();
         for groups in text
-            .as_concat_ref()
             .pcre_matches(pattern)
-            .match_components(text.as_concat_ref(), text.as_concat_ref().len())
+            .match_components(text, text.len())
         {
             let groups = match groups {
                 MatchComponent::Match(m) => m,
@@ -224,7 +225,7 @@ pub(super) fn make_link<'a>(text: TwoStr<'a>, config: &Config) -> Vec<InlineElem
                 // Link_plugin
                 let plugin_name = groups.group(3).into();
                 let parameter = groups.group_opt(4).map(Into::into);
-                let body = groups.group_opt(5).map(|s| make_link(s.into(), config));
+                let body = groups.group_opt(5).map(|s| make_link(s, config));
                 if exist_plugin_inline(plugin_name) {
                     let parsed = InlinePlugin {
                         plugin_name,
@@ -237,8 +238,8 @@ pub(super) fn make_link<'a>(text: TwoStr<'a>, config: &Config) -> Vec<InlineElem
                 }
             } else if groups.group_opt(6).is_some() {
                 // Link_note
-                let body = groups.group(7).to_owned();
-                let contents = make_link(body.into(), config);
+                let body = groups.group(7);
+                let contents = make_link(body, config);
                 res.push(Footnote { contents }.into());
             } else if groups.group_opt(8).is_some() {
                 // Link_url
@@ -278,21 +279,28 @@ pub(super) fn make_link<'a>(text: TwoStr<'a>, config: &Config) -> Vec<InlineElem
             } else if groups.group_opt(18).is_some() {
                 // Link_interwikiname
                 let alias = groups.group_opt(19);
-                let name = groups.group(21);
-                let param = groups.group(22);
-                let (param, anchor) = if let Some(captures) =
-                    param.regex_captures(regex!(r"^([^#]+)(#[A-Za-z][\w-]*)$"))
+                let name = groups.group_obj(21).unwrap();
+                let param = groups.group_obj(22).unwrap();
+                let (param, param_end, anchor) = if let Some(captures) = param
+                    .as_str()
+                    .regex_captures(regex!(r"^([^#]+)(#[A-Za-z][\w-]*)$"))
                 {
+                    let before_anchor = captures.get(1).unwrap();
                     (
-                        captures.get(1).unwrap().as_str(),
+                        before_anchor.as_str(),
+                        param.start() + before_anchor.end(),
                         captures.get(2).map(|x| x.as_str()),
                     )
                 } else {
-                    (param, None)
+                    (param.as_str(), param.end(), None)
                 };
                 let caption = alias.map_or_else(Vec::new, |alias| {
-                    parse_alias((name, ":", param), alias, config)
+                    // name (18+3) and param(18+4) are adjacent, separated by ":"
+                    // (even if the alias was split off)
+                    let name_and_alias = text.index_owned(name.start()..param_end);
+                    parse_alias(name_and_alias, alias, config)
                 });
+                let name = name.as_str();
                 let destination =
                     get_interwiki_url(name, param).unwrap_or(InterWikiDestination::Myself {
                         page_name: param.into(),
@@ -304,40 +312,61 @@ pub(super) fn make_link<'a>(text: TwoStr<'a>, config: &Config) -> Vec<InlineElem
                     caption,
                 };
                 res.push(parsed.into());
-            } else if let Some(group) = groups.group_opt(24) {
+            } else if let Some(group) = groups.group_obj(24) {
                 // Link_bracketname
-                let alias = groups.group_opt(25).map(TwoStrConcatRef::from);
-                let name = groups.group_opt(27).map(TwoStrConcatRef::from);
-                let anchor = groups.group_opt(28).map(TwoStrConcatRef::from);
-                let name_ref = name.unwrap_or_default();
-                let name_is_empty = name.as_ref().map_or(true, |s| s.is_empty());
-                if name_is_empty && anchor.as_ref().map_or(true, |s| s.is_empty()) {
-                    res.extend(make_line_rules(group).map(InlineElement::InlineToken));
+                let alias = groups.group_obj(25);
+                let name = groups.group_obj(27);
+                let anchor = groups.group_obj(28);
+
+                let alias_str = alias.as_ref().map(|x| x.as_str());
+                let name_str = name.as_ref().map(|x| x.as_str());
+                let anchor_str = anchor.as_ref().map(|x| x.as_str());
+
+                let name_str_some = name_str.unwrap_or_default();
+
+                let name_is_empty = name.as_ref().map_or(true, |s| s.as_str().is_empty());
+                if name_is_empty && anchor.as_ref().map_or(true, |s| s.as_str().is_empty()) {
+                    res.extend(make_line_rules(group.as_str()).map(InlineElement::InlineToken));
                 } else if name_is_empty
                     // not wikiname
-                    || pcre!(r"^(?:[A-Z][a-z]+){2,}(?!\w)$" => (name_ref).pcre_exec).is_none()
+                    || pcre!(r"^(?:[A-Z][a-z]+){2,}(?!\w)$" => (name_str_some).pcre_exec).is_none()
                 {
                     // TODO [compl] if the page does not exist, it should return plain text instead
                     // TODO [compl] update name with absolute name
-                    let alias: Option<MaybeConcat<TwoStrConcatRef>> = if alias.as_ref().map_or(true, |x| x.is_empty()) {
+                    let alias = if alias.as_ref().map_or(true, |x| x.as_str().is_empty()) {
                         if let Some(anchor) = anchor {
-                            Some((name.unwrap_or_default().into(), "", anchor).into())
+                            let start = name.as_ref().map_or(anchor.start(), |x| x.end());
+                            // Some((name.unwrap_or_default().into(), "", anchor).into())
+                            Some(text.index_owned(start..anchor.end()))
                         } else {
-                            name.map(Into::into)
+                            name_str
                         }
                     } else {
-                        alias.map(Into::into)
+                        alias_str
                     };
-                    let contents = alias.map_or_else(Vec::new, |alias| {
-                        parse_alias(name.unwrap_or_default(), alias, config)
-                    });
-                    res.push(make_page_link(name.map(Into::into), contents, anchor.map(Into::into), false).into());
+                    let contents = alias
+                        .map_or_else(Vec::new, |alias| parse_alias(name_str_some, alias, config));
+                    res.push(
+                        make_page_link(
+                            name_str.map(|x| x.into()),
+                            contents,
+                            anchor_str.map(|x| x.into()),
+                            false,
+                        )
+                        .into(),
+                    );
                 }
             } else if groups.group_opt(29).is_some() {
                 // Link_wikiname
                 let wikiname = groups.group(30).into();
                 res.push(
-                    make_page_link(Some(wikiname), wikiname.into_iter().map(|x| x.into()).collect_vec(), None, false).into(),
+                    make_page_link(
+                        Some(wikiname),
+                        wikiname.into_iter().map(|x| x.into()).collect_vec(),
+                        None,
+                        false,
+                    )
+                    .into(),
                 );
             } else {
                 unreachable!("The regex has either of these groups")
@@ -376,13 +405,12 @@ impl<T> From<MaybeImgUrl<T>> for MaybeConcat<T> {
 }
 fn parse_alias<'o, 'a>(
     name: impl Into<MaybeConcat<TwoStrConcatRef<'o, 'a>>>,
-    alias: impl Into<MaybeImgUrl<TwoStrConcatRef<'o, 'a>>>,
+    alias: TwoStrConcatRef<'o, 'a>,
     config: &Config,
 ) -> Vec<InlineElement<'a>> {
     let name = name.into();
-    let alias = alias.into();
     if config.disable_inline_image_from_uri {
-        if let Some(src) = alias.as_img_url() {
+        if let Some(src) = MaybeImgUrl::from(alias).as_img_url() {
             let parsed = Image {
                 src,
                 alt: name.into_mapped(),
@@ -390,12 +418,11 @@ fn parse_alias<'o, 'a>(
             return vec![parsed.into()];
         }
     }
-    let alias = MaybeConcat::from(alias);
     if !alias.is_empty() {
         // $page is an external information, so we don't
         // TODO make_link converts plugin, but here it shouldn't
         // TODO make_line_rules
-        make_link(alias.into_mapped(), config)
+        make_link(alias, config)
     } else {
         vec![]
     }

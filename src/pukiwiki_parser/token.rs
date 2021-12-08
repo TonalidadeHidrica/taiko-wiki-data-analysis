@@ -1,4 +1,4 @@
-use std::{collections::HashMap, iter::{Peekable, Map}, ops::Range, str::FromStr};
+use std::{collections::HashMap, iter::Peekable, ops::Range, str::FromStr};
 
 use either::*;
 use entities::{Entity, ENTITIES};
@@ -11,13 +11,12 @@ use regex::Regex;
 use crate::{
     html5_spec::numeric_character_reference::{html_charcode, HtmlCharcodeError},
     my_itertools::{MyItertools, PeekableExt},
-    pukiwiki_parser::str_ext::TwoStr,
     regex,
-    regex_ext::iter::{MatchComponent, MatchComponentIterator, MatchIterator, MatchLike},
+    regex_ext::iter::{MatchComponent, MatchIterator, MatchLike},
 };
 
 use super::str_ext::{
-    self, find_iter_char, find_iter_char_any, find_iter_str, TwoStrConcatRef, TwoStrIter, regex::Captures,
+    self, find_iter_char, find_iter_char_any, find_iter_str, TwoStr, TwoStrConcatRef,
 };
 
 #[derive(Debug, derive_more::From)]
@@ -97,8 +96,7 @@ pub enum StyleKind {
 }
 pub(crate) fn make_line_rules<'a: 'ret, 'o: 'ret, 'ret>(
     str: impl Into<TwoStrConcatRef<'a, 'o>>,
-) -> impl Iterator<Item=InlineToken<'o>> + 'ret
-{
+) -> impl Iterator<Item = InlineToken<'o>> + 'ret {
     let str = str.into();
     let regex = regex!(
         r"(?x)

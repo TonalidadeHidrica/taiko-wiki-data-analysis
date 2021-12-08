@@ -5,7 +5,7 @@ pub trait RangeSlice<T> {
     fn end_bound_slice(&self) -> Option<&T>;
 }
 
-impl <T> RangeSlice<T> for Range<T> {
+impl<T> RangeSlice<T> for Range<T> {
     fn start_bound_slice(&self) -> Option<&T> {
         Some(&self.start)
     }
@@ -15,7 +15,7 @@ impl <T> RangeSlice<T> for Range<T> {
     }
 }
 
-impl <T> RangeSlice<T> for Range<&'_ T> {
+impl<T> RangeSlice<T> for Range<&'_ T> {
     fn start_bound_slice(&self) -> Option<&T> {
         Some(self.start)
     }
@@ -25,7 +25,7 @@ impl <T> RangeSlice<T> for Range<&'_ T> {
     }
 }
 
-impl <T> RangeSlice<T> for RangeFrom<T> {
+impl<T> RangeSlice<T> for RangeFrom<T> {
     fn start_bound_slice(&self) -> Option<&T> {
         Some(&self.start)
     }
@@ -35,7 +35,7 @@ impl <T> RangeSlice<T> for RangeFrom<T> {
     }
 }
 
-impl <T> RangeSlice<T> for RangeFrom<&'_ T> {
+impl<T> RangeSlice<T> for RangeFrom<&'_ T> {
     fn start_bound_slice(&self) -> Option<&T> {
         Some(self.start)
     }
@@ -45,7 +45,7 @@ impl <T> RangeSlice<T> for RangeFrom<&'_ T> {
     }
 }
 
-impl <T> RangeSlice<T> for RangeTo<T> {
+impl<T> RangeSlice<T> for RangeTo<T> {
     fn start_bound_slice(&self) -> Option<&T> {
         None
     }
@@ -55,7 +55,7 @@ impl <T> RangeSlice<T> for RangeTo<T> {
     }
 }
 
-impl <T> RangeSlice<T> for RangeTo<&'_ T> {
+impl<T> RangeSlice<T> for RangeTo<&'_ T> {
     fn start_bound_slice(&self) -> Option<&T> {
         None
     }
@@ -65,7 +65,7 @@ impl <T> RangeSlice<T> for RangeTo<&'_ T> {
     }
 }
 
-impl <T> RangeSlice<T> for RangeFull {
+impl<T> RangeSlice<T> for RangeFull {
     fn start_bound_slice(&self) -> Option<&T> {
         None
     }

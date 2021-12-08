@@ -1,7 +1,4 @@
-use std::{
-    borrow::Cow,
-    ops::{Bound, Index, Range, RangeBounds},
-};
+use std::ops::{Bound, Range, RangeBounds};
 
 use len_trait::{Empty, Len};
 
@@ -16,22 +13,6 @@ pub fn strip_prefix_n(s: &str, c: char, n: usize) -> (usize, &str) {
         .take(n + 1)
         .last()
         .unwrap()
-}
-
-#[allow(clippy::ptr_arg)]
-pub fn strip_prefix_cow<'a>(str: &Cow<'a, str>, prefix: char) -> Option<Cow<'a, str>> {
-    match str {
-        Cow::Owned(str) => str.strip_prefix(prefix).map(|s| s.to_owned().into()),
-        Cow::Borrowed(str) => str.strip_prefix(prefix).map(|s| s.into()),
-    }
-}
-
-#[allow(clippy::ptr_arg)]
-pub fn trim_cow<'a>(str: &Cow<'a, str>) -> Cow<'a, str> {
-    match str {
-        Cow::Owned(str) => str.trim().to_owned().into(),
-        Cow::Borrowed(str) => str.trim().into(),
-    }
 }
 
 pub fn find_iter_str<'a, 'o>(
@@ -104,8 +85,8 @@ impl<'a> TwoStr<'a> {
     }
 }
 
-impl<'a, T: AsRef<str> + 'a> From<T> for TwoStr<'a> {
-    fn from(str: T) -> Self {
+impl<'a, T: AsRef<str> + ?Sized> From<&'a T> for TwoStr<'a> {
+    fn from(str: &'a T) -> Self {
         Self {
             left: str.as_ref(),
             right: "",
@@ -131,10 +112,10 @@ fn into_range(range: impl RangeBounds<usize>, len: usize) -> Range<usize> {
     start..end
 }
 
-impl<'a, R: RangeBounds<usize>> Index<R> for TwoStr<'a> {
+impl<'a, R: RangeBounds<usize>> IndexOwned<R> for TwoStr<'a> {
     type Output = Self;
 
-    fn index(&self, index: R) -> &Self::Output {
+    fn index_owned(self, index: R) -> Self::Output {
         let len_l = self.left.len();
         let len = len_l + self.right.len();
         let Range { start, end } = into_range(index, len);
@@ -150,9 +131,9 @@ impl<'a, R: RangeBounds<usize>> Index<R> for TwoStr<'a> {
             end,
             len
         );
-        &Self::new(
+        Self::new(
             &self.left[start.min(len_l)..end.min(len_l)],
-            &self.right[start.max(len_l)..end.max(len_l)],
+            &self.right[start.saturating_sub(len_l)..end.saturating_sub(len_l)],
         )
     }
 }
@@ -338,28 +319,22 @@ impl<'a, 'o> TwoStrConcatRef<'a, 'o> {
     }
 }
 
-impl<'a, 'o, R: RangeBounds<usize>> Index<R> for TwoStrConcatRef<'a, 'o> {
+impl<'a, 'o, R: RangeBounds<usize>> IndexOwned<R> for TwoStrConcatRef<'a, 'o> {
     type Output = Self;
 
-    fn index(&self, index: R) -> &Self::Output {
+    fn index_owned(self, index: R) -> Self::Output {
         let range = into_range(index, self.len());
-        &Self(&self.0[range], self.1[range])
-    }
-}
-impl<'a, 'o, I> IndexOwned<I> for TwoStrConcatRef<'a, 'o>
-where
-    Self: Index<I>,
-    <Self as Index<I>>::Output: Sized,
-{
-    type Output = <Self as Index<I>>::Output;
-
-    fn index_owned(self, index: I) -> Self::Output {
-        self[index]
+        Self(&self.0[range.clone()], self.1.index_owned(range))
     }
 }
 
 pub mod pcre {
-    use crate::regex_ext::{iter::MatchLike, pcre::MatchExt};
+    use std::ops::Range;
+
+    use crate::regex_ext::{
+        iter::{IndexOwned, MatchLike},
+        pcre::MatchExt,
+    };
 
     use super::TwoStrConcatRef;
 
@@ -380,8 +355,8 @@ pub mod pcre {
     }
 
     pub struct Match<'a, 'o> {
-        m: ::pcre::Match<'a>,
-        str: TwoStrConcatRef<'a, 'o>,
+        pub(super) m: ::pcre::Match<'a>,
+        pub(super) str: TwoStrConcatRef<'a, 'o>,
     }
 
     impl<'a, 'o> MatchLike for Match<'a, 'o> {
@@ -395,13 +370,45 @@ pub mod pcre {
     }
 
     impl<'a, 'o> Match<'a, 'o> {
-        pub fn group(self, n: usize) -> TwoStrConcatRef<'a, 'o> {
-            self.str[self.m.group_start(n)..self.m.group_end(n)]
+        pub fn group(&self, n: usize) -> TwoStrConcatRef<'a, 'o> {
+            self.str
+                .index_owned(self.m.group_start(n)..self.m.group_end(n))
         }
 
-        pub fn group_opt(self, n: usize) -> Option<TwoStrConcatRef<'a, 'o>> {
-            let (group, range) = self.m.group_opt_helper(n)?;
-            Some(self.str[range])
+        pub fn group_opt(&self, n: usize) -> Option<TwoStrConcatRef<'a, 'o>> {
+            let res = self.m.group_obj(n)?;
+            Some(self.str.index_owned(res.range()))
+        }
+
+        pub fn group_obj(&self, n: usize) -> Option<Group<'a, 'o>> {
+            let group = self.m.group_obj(n)?;
+            Some(Group {
+                group,
+                str: self.str,
+            })
+        }
+    }
+
+    pub struct Group<'a, 'o> {
+        group: crate::regex_ext::pcre::Group<'a>,
+        str: TwoStrConcatRef<'a, 'o>,
+    }
+
+    impl<'a, 'o> Group<'a, 'o> {
+        pub fn as_str(&self) -> TwoStrConcatRef<'a, 'o> {
+            self.str.index_owned(self.group.range())
+        }
+
+        pub fn start(&self) -> usize {
+            self.group.start()
+        }
+
+        pub fn end(&self) -> usize {
+            self.group.end()
+        }
+
+        pub fn range(&self) -> Range<usize> {
+            self.group.range()
         }
     }
 }
@@ -409,7 +416,7 @@ pub mod pcre {
 pub mod regex {
     use std::ops::Range;
 
-    use crate::regex_ext::iter::MatchLike;
+    use crate::regex_ext::iter::{IndexOwned, MatchLike};
 
     use super::TwoStrConcatRef;
 
@@ -446,8 +453,8 @@ pub mod regex {
     }
 
     pub struct Captures<'a, 'o> {
-        captures: ::regex::Captures<'a>,
-        str: TwoStrConcatRef<'a, 'o>,
+        pub(super) captures: ::regex::Captures<'a>,
+        pub(super) str: TwoStrConcatRef<'a, 'o>,
     }
 
     impl<'a, 'o> MatchLike for Captures<'a, 'o> {
@@ -482,18 +489,28 @@ pub mod regex {
     }
 
     impl<'a, 'o> Match<'a, 'o> {
-        pub fn range(&self) -> Range<usize> {
-            self.m.range()
+        pub fn as_str(&self) -> TwoStrConcatRef<'a, 'o> {
+            self.str.index_owned(self.m.range())
         }
 
-        pub fn as_str(&self) -> TwoStrConcatRef<'a, 'o> {
-            self.str[self.m.range()]
+        pub fn start(&self) -> usize {
+            self.m.start()
+        }
+
+        pub fn end(&self) -> usize {
+            self.m.end()
+        }
+
+        pub fn range(&self) -> Range<usize> {
+            self.m.range()
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::{pukiwiki_parser::str_ext::TwoStr, regex_ext::iter::IndexOwned};
+
     use super::strip_prefix_n;
 
     #[test]
@@ -508,5 +525,70 @@ mod tests {
         assert_eq!(strip_prefix_n("aaabcde", 'a', 3), (3, "bcde"));
         assert_eq!(strip_prefix_n("aaaabcde", 'a', 3), (3, "abcde"));
         assert_eq!(strip_prefix_n("aaaaabcde", 'a', 3), (3, "aabcde"));
+    }
+
+    #[test]
+    fn test_two_str_new() {
+        assert_eq!(
+            TwoStr::new("", ""),
+            TwoStr {
+                left: "",
+                right: ""
+            }
+        );
+        assert_eq!(
+            TwoStr::new("", "abc"),
+            TwoStr {
+                left: "abc",
+                right: ""
+            }
+        );
+        assert_eq!(
+            TwoStr::new("abc", ""),
+            TwoStr {
+                left: "abc",
+                right: ""
+            }
+        );
+        assert_eq!(
+            TwoStr::new("abc", "def"),
+            TwoStr {
+                left: "abc",
+                right: "def"
+            }
+        );
+    }
+
+    #[test]
+    fn test_two_str_index() {
+        let a = TwoStr::new("abc", "def");
+        assert_eq!(a.index_owned(0..0), TwoStr::new("", ""));
+        assert_eq!(a.index_owned(1..1), TwoStr::new("", ""));
+        assert_eq!(a.index_owned(3..3), TwoStr::new("", ""));
+        assert_eq!(a.index_owned(4..4), TwoStr::new("", ""));
+        assert_eq!(a.index_owned(6..6), TwoStr::new("", ""));
+
+        assert_eq!(a.index_owned(0..1), TwoStr::new("a", ""));
+        assert_eq!(a.index_owned(0..2), TwoStr::new("ab", ""));
+        assert_eq!(a.index_owned(0..3), TwoStr::new("abc", ""));
+        assert_eq!(a.index_owned(0..4), TwoStr::new("abc", "d"));
+        assert_eq!(a.index_owned(0..5), TwoStr::new("abc", "de"));
+        assert_eq!(a.index_owned(0..6), TwoStr::new("abc", "def"));
+
+        assert_eq!(a.index_owned(2..3), TwoStr::new("c", ""));
+        assert_eq!(a.index_owned(2..4), TwoStr::new("c", "d"));
+        assert_eq!(a.index_owned(2..5), TwoStr::new("c", "de"));
+        assert_eq!(a.index_owned(2..6), TwoStr::new("c", "def"));
+
+        assert_eq!(a.index_owned(3..3), TwoStr::new("", ""));
+        assert_eq!(a.index_owned(3..4), TwoStr::new("d", ""));
+        assert_eq!(a.index_owned(3..5), TwoStr::new("de", ""));
+        assert_eq!(a.index_owned(3..6), TwoStr::new("def", ""));
+
+        assert_eq!(a.index_owned(4..4), TwoStr::new("", ""));
+        assert_eq!(a.index_owned(4..5), TwoStr::new("e", ""));
+        assert_eq!(a.index_owned(4..6), TwoStr::new("ef", ""));
+
+        assert_eq!(a.index_owned(5..6), TwoStr::new("f", ""));
     }
 }
