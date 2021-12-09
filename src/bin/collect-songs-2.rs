@@ -30,14 +30,20 @@ fn main() -> anyhow::Result<()> {
             _ => None,
         });
     for row in rows {
+        // 9 elements
         match &row.cells()[..] {
             [rem @ .., TableCell::Content(value, style)]
                 if rem.iter().all(|x| matches!(x, TableCell::MergeRight)) =>
             {
                 let color = style.background_color();
-                println!("{:?} {:?}", color, value);
+                let genre_name: String = value.child().text().collect();
+                println!("Genre {:?} (color: {:?})", genre_name, color);
             }
-            _ => {}
+            x => {
+                println!("{:?}", x[5]);
+                let v = x.iter().map(|x| x.text().collect::<String>()).collect_vec();
+                println!("{:?}", v);
+            }
         }
     }
     Ok(())

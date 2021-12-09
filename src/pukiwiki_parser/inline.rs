@@ -1,3 +1,6 @@
+use std::{borrow::Cow, iter::empty};
+
+use auto_enums::auto_enum;
 use getset::{CopyGetters, Getters};
 use itertools::Itertools;
 use len_trait::{Empty, Len};
@@ -590,5 +593,26 @@ fn make_page_link<'a>(
         contents,
         anchor,
         is_auto_link,
+    }
+}
+
+// Itertors
+impl InlineElement<'_> {
+    #[auto_enum(Iterator)]
+    pub fn text(&self) -> impl Iterator<Item = Cow<str>> {
+        match self {
+            InlineElement::InlineToken(x) => x.text(),
+            InlineElement::PageLink(x) => {
+                Box::new(x.contents().iter().flat_map(|x| x.text())) as Box<dyn Iterator<Item = _>>
+            }
+            _ => empty(),
+            // InlineElement::InlinePlugin(_) => todo!(),
+            // InlineElement::Footnote(_) => todo!(),
+            // InlineElement::Link(_) => todo!(),
+            // InlineElement::InterWikiUrl(_) => todo!(),
+            // InlineElement::MailTo(_) => todo!(),
+            // InlineElement::Image(_) => todo!(),
+            // InlineElement::InterWikiNameUrl(_) => todo!(),
+        }
     }
 }
