@@ -235,67 +235,95 @@ impl<'a> Iterator for TwoStrIter<'a> {
 /// - `'o` stands for the lifetime to the original str.
 /// - `self.0 == self.1.left + self.1.right`
 #[derive(Clone, Debug)]
-pub struct TwoStrConcat<'o>(String, TwoStr<'o>);
+pub enum TwoStrConcat<'o> {
+    One(&'o str),
+    Two(String, TwoStr<'o>),
+}
 
 impl<'a> TwoStr<'a> {
     pub fn into_concat(self) -> TwoStrConcat<'a> {
-        TwoStrConcat(self.left.to_owned() + self.right, self)
+        match self.right {
+            "" => TwoStrConcat::One(self.left),
+            _ => TwoStrConcat::Two(self.left.to_owned() + self.right, self),
+        }
     }
 }
 
 impl<'o> TwoStrConcat<'o> {
     pub fn as_concat_ref<'a>(&'a self) -> TwoStrConcatRef<'a, 'o> {
-        TwoStrConcatRef(&self.0, self.1)
+        match self {
+            TwoStrConcat::One(str) => TwoStrConcatRef::One(str),
+            TwoStrConcat::Two(cat, orig) => TwoStrConcatRef::Two(cat, *orig),
+        }
     }
 }
 
 /// - `'a` stands for the lifetime to the concat str.
 /// - `'o` stands for the lifetime to the original str.
 /// - `self.0 == self.1.left + self.1.right`
-#[derive(Clone, Copy, Default)]
-pub struct TwoStrConcatRef<'a, 'o>(&'a str, TwoStr<'o>);
+#[derive(Clone, Copy)]
+pub enum TwoStrConcatRef<'a, 'o> {
+    One(&'o str),
+    Two(&'a str, TwoStr<'o>),
+}
 
-impl<'a> From<&'a str> for TwoStrConcatRef<'a, 'a> {
-    fn from(this: &'a str) -> Self {
-        Self(this, this.into())
+impl Default for TwoStrConcatRef<'_, '_> {
+    fn default() -> Self {
+        Self::One("")
     }
 }
 
-impl<'a, 'o> From<TwoStrConcatRef<'a, 'o>> for &'a str {
+impl<'a> From<&'a str> for TwoStrConcatRef<'a, 'a> {
+    fn from(this: &'a str) -> Self {
+        Self::One(this)
+    }
+}
+
+impl<'a, 'o: 'a> From<TwoStrConcatRef<'a, 'o>> for &'a str {
     fn from(this: TwoStrConcatRef<'a, 'o>) -> Self {
-        this.0
+        match this {
+            TwoStrConcatRef::One(str) => str,
+            TwoStrConcatRef::Two(cat, _) => cat,
+        }
     }
 }
 
 impl<'a, 'o> From<TwoStrConcatRef<'a, 'o>> for TwoStr<'o> {
     fn from(this: TwoStrConcatRef<'a, 'o>) -> Self {
-        this.1
+        match this {
+            TwoStrConcatRef::One(str) => str.into(),
+            TwoStrConcatRef::Two(_, orig) => orig,
+        }
     }
 }
 
 impl<'a, 'o> Empty for TwoStrConcatRef<'a, 'o> {
     fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.as_str().is_empty()
     }
 }
 
 impl<'a, 'o> Len for TwoStrConcatRef<'a, 'o> {
     fn len(&self) -> usize {
-        self.0.len()
+        self.as_str().len()
     }
 }
 
-impl<'a, 'o> TwoStrConcatRef<'a, 'o> {
+impl<'a, 'o: 'a> TwoStrConcatRef<'a, 'o> {
+    pub fn as_str(self) -> &'a str {
+        self.into()
+    }
+
     pub fn pcre_matches<'r>(
         self,
         regex: &'r ::pcre::Pcre,
     ) -> self::pcre::MatchIterator<'r, 'a, 'o> {
-        self::pcre::MatchIterator(regex.matches(self.0), self)
+        self::pcre::MatchIterator(regex.matches(self.as_str()), self)
     }
 
     pub fn pcre_exec<'r>(self, regex: &'r ::pcre::Pcre) -> Option<self::pcre::Match<'a, 'o>> {
         Some(self::pcre::Match {
-            m: regex.exec(self.0)?,
+            m: regex.exec(self.as_str())?,
             str: self,
         })
     }
@@ -305,7 +333,7 @@ impl<'a, 'o> TwoStrConcatRef<'a, 'o> {
         regex: &'r ::regex::Regex,
     ) -> self::regex::Matches<'r, 'a, 'o> {
         self::regex::Matches {
-            it: regex.find_iter(self.0),
+            it: regex.find_iter(self.as_str()),
             str: self,
         }
     }
@@ -315,7 +343,7 @@ impl<'a, 'o> TwoStrConcatRef<'a, 'o> {
         regex: &'r ::regex::Regex,
     ) -> Option<self::regex::Captures<'a, 'o>> {
         Some(self::regex::Captures {
-            captures: regex.captures(self.0)?,
+            captures: regex.captures(self.as_str())?,
             str: self,
         })
     }
@@ -325,13 +353,13 @@ impl<'a, 'o> TwoStrConcatRef<'a, 'o> {
         regex: &'r ::regex::Regex,
     ) -> self::regex::CaptureMatches<'r, 'a, 'o> {
         self::regex::CaptureMatches {
-            it: regex.captures_iter(self.0),
+            it: regex.captures_iter(self.as_str()),
             str: self,
         }
     }
 
     pub fn regex_is_match(&self, regex: &::regex::Regex) -> bool {
-        regex.is_match(self.0)
+        regex.is_match(self.as_str())
     }
 }
 
@@ -340,7 +368,12 @@ impl<'a, 'o, R: RangeBounds<usize>> IndexOwned<R> for TwoStrConcatRef<'a, 'o> {
 
     fn index_owned(self, index: R) -> Self::Output {
         let range = into_range(index, self.len());
-        Self(&self.0[range.clone()], self.1.index_owned(range))
+        match self {
+            TwoStrConcatRef::One(str) => TwoStrConcatRef::One(&str[range]),
+            TwoStrConcatRef::Two(cat, orig) => {
+                TwoStrConcatRef::Two(&cat[range.clone()], orig.index_owned(range))
+            }
+        }
     }
 }
 
