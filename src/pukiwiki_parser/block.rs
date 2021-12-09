@@ -1,3 +1,6 @@
+use std::{borrow::Cow, iter::empty};
+
+use auto_enums::auto_enum;
 use either::*;
 use getset::{CopyGetters, Getters};
 use itertools::Itertools;
@@ -5,6 +8,7 @@ use regex::Regex;
 
 use crate::{
     either_ext::{into_common_2, EitherExt},
+    pukiwiki_parser::token::StyleKind,
     regex,
 };
 
@@ -14,6 +18,7 @@ use super::{
     php::as_numeric,
     preprocess::PreprocessedString,
     str_ext::{strip_prefix_n, TwoStr},
+    token::InlineToken,
 };
 
 type FactoryInlineRet<'a> = Either<Paragraph<'a>, Inline<'a>>;
@@ -630,4 +635,42 @@ pub fn parse<'a>(config: &ParserConfig, lines: &'a PreprocessedString) -> Vec<El
         }
     }
     ret
+}
+
+// Iterators
+
+impl TableCell<'_> {
+    #[auto_enum(Iterator)]
+    pub fn text(&self) -> impl Iterator<Item = Cow<str>> {
+        match self {
+            TableCell::MergeRight | TableCell::MergeAbove => empty(),
+            TableCell::Content(content, _) => content.child().text(),
+        }
+    }
+}
+impl TableContentChild<'_> {
+    #[auto_enum(Iterator)]
+    pub fn text(&self) -> impl Iterator<Item = Cow<str>> {
+        match self {
+            TableContentChild::Inline(x) => x
+                .elements
+                .iter()
+                .scan(0, |depth, e| {
+                    if let InlineElement::InlineToken(token) = e {
+                        match token {
+                            InlineToken::StyleSpecifierStart(_) => *depth += 1,
+                            InlineToken::StyleStart(StyleKind::Span) => *depth -= 1,
+                            _ => {}
+                        }
+                    }
+                    Some((*depth == 0).then(|| e))
+                })
+                .flatten()
+                .flat_map(|x| x.text()),
+            // TableContentChild::Paragraph(x) => [].into_iter(),
+            // TableContentChild::Div(x) => [].into_iter(),
+            // TableContentChild::Empty => todo!(),
+            _ => empty(),
+        }
+    }
 }

@@ -1,5 +1,11 @@
-use std::{collections::HashMap, iter::Peekable, ops::Range, str::FromStr};
+use std::{
+    collections::HashMap,
+    iter::{empty, once, Peekable},
+    ops::Range,
+    str::FromStr, borrow::Cow,
+};
 
+use auto_enums::auto_enum;
 use either::*;
 use entities::{Entity, ENTITIES};
 use itertools::{any, zip, Itertools};
@@ -516,6 +522,51 @@ fn get_format_ranges<'a, 'o>(
         }
     }
     res
+}
+
+// Iterator
+impl InlineToken<'_> {
+    #[auto_enum(Iterator)]
+    pub fn text(&self) -> impl Iterator<Item = Cow<str>> {
+        use InlineToken::*;
+        match self {
+            &Str(x) => once(x.into()),
+            SpecialChar(x) => x.text(),
+            NewLine => once("\n".into()),
+            PushButton(x) => once(x.as_str().into()),
+            MobileEmoji(_) => once(" ".into()),
+            FaceMark(_) | StyleSpecifierStart(_) | StyleStart(_) | StyleEnd(_) => empty(),
+        }
+    }
+}
+impl SpecialChar {
+    #[auto_enum(Iterator)]
+    pub fn text(&self) -> impl Iterator<Item = Cow<str>> {
+        use SpecialChar::*;
+        match self {
+            NamedEntity(x) => once(x.characters.into()),
+            Char(x) | NonCharacter(x) | ControlCharacter(x) => once(x.to_string().into()),
+            ReplacementCharacter => empty(),
+        }
+    }
+}
+impl PushButton {
+    pub fn as_str(&self) -> &'static str {
+        use PushButton::*;
+        match self {
+            Pb0 => "[0]",
+            Pb1 => "[1]",
+            Pb2 => "[2]",
+            Pb3 => "[3]",
+            Pb4 => "[4]",
+            Pb5 => "[5]",
+            Pb6 => "[6]",
+            Pb7 => "[7]",
+            Pb8 => "[8]",
+            Pb9 => "[9]",
+            PbHash => "[#]",
+        }
+    }
 }
 
 #[cfg(test)]
