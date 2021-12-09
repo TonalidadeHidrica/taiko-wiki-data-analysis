@@ -1,4 +1,7 @@
-use std::ops::{Bound, Range, RangeBounds};
+use std::{
+    fmt::Debug,
+    ops::{Bound, Range, RangeBounds},
+};
 
 use len_trait::{Empty, Len};
 
@@ -63,7 +66,7 @@ pub fn find_iter_char_any<'a>(
 
 //     left == "" => right == ""
 // <=> left != "" || right == ""
-#[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TwoStr<'a> {
     left: &'a str,
     right: &'a str,
@@ -177,6 +180,19 @@ impl<'a> IntoIterator for TwoStr<'a> {
 
     fn into_iter(self) -> Self::IntoIter {
         TwoStrIter(self, 0)
+    }
+}
+
+impl<'a> Debug for TwoStr<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.right {
+            "" => write!(f, "{:?}", self.left),
+            _ => f
+                .debug_tuple("")
+                .field(&self.left)
+                .field(&self.right)
+                .finish(),
+        }
     }
 }
 

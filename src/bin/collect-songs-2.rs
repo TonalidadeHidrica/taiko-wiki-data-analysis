@@ -35,7 +35,7 @@ fn main() -> anyhow::Result<()> {
                 if rem.iter().all(|x| matches!(x, TableCell::MergeRight)) =>
             {
                 let color = style.background_color();
-                dbg!(color, value);
+                println!("{:?} {:?}", color, value);
             }
             _ => {}
         }
