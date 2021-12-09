@@ -54,15 +54,12 @@ fn largest_table<'a, 'b: 'a>(elements: &'a [Element<'b>]) -> Option<&'a [Element
         .iter()
         .enumerate()
         .map(|x| {
-            (
-                match &x.1 {
-                    Element::Table(t) => Yes(t.cells().len()),
-                    Element::NewLine => Maybe,
-                    _ => No,
-                },
-                x.0,
-                x.1,
-            )
+            let kind = match &x.1 {
+                Element::Table(t) => Yes(t.cells().len()),
+                Element::NewLine => Maybe,
+                _ => No,
+            };
+            (kind, x.0)
         })
         .dedup_by(|x, y| match (&x.0, &y.0) {
             (Yes(x), Yes(y)) => x == y,
