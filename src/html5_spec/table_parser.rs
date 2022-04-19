@@ -215,6 +215,7 @@ fn algorithm_for_ending_a_row_group<T>(context: &mut Context<T>) {
     context.list_of_downward_growing_cells.clear();
 }
 
+#[allow(clippy::nonminimal_bool)]
 fn algorithm_for_processing_rows<R: RowLike>(
     context: &mut Context<<<R as RowLike>::Cell as CellLike>::Item>,
     tr: &R,
