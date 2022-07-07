@@ -15,7 +15,7 @@ anyhow = "1.0.44"
 assert_matches = "1.5.0"
 async-std = "1.5.0"
 auto_enums = "0.7.12"
-clap = "3.0.0-beta.5"
+clap = { version = "3.2.8", features = ["derive"] }
 derive_more = "0.99.16"
 ego-tree = "0.6.2"
 either = "1.6.1"
