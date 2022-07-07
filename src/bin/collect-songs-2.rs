@@ -23,7 +23,7 @@ fn main() -> anyhow::Result<()> {
     });
     let elements = reader.read(&opts.page_name)?;
     let rows = largest_table(&elements)
-        .ok_or(anyhow!("There is no table in this page"))?
+        .ok_or_else(|| anyhow!("There is no table in this page"))?
         .iter()
         .filter_map(|x| match x {
             Element::Table(table) if table.kind() != TableRowKind::Formatter => Some(table),
