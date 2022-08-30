@@ -17,7 +17,7 @@ pub enum BlockElement {
     Unknown(Unknown),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum HeadingType {
     H2,
     H3,
@@ -53,7 +53,7 @@ pub mod list {
         pub items: Vec<Item>,
     }
 
-    #[derive(Debug, PartialEq)]
+    #[derive(Debug, PartialEq, Eq)]
     pub enum Kind {
         ORDERED,
         UNORDERED,
@@ -85,14 +85,14 @@ pub enum InlineElement {
     Unknown(Unknown),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum LinkType {
     Target(String),
     WikiPage(String),
     External(String),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Unknown {
     Element { text: String, html: String },
     Node(Node),
