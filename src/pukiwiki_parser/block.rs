@@ -533,7 +533,7 @@ pub fn parse<'a>(config: &ParserConfig, lines: &'a PreprocessedString) -> Vec<El
     let mut ret: Vec<Element> = vec![];
     let mut newlines = lines
         .char_indices()
-        .filter_map(|(i, c)| (c == '\r').then(|| i));
+        .filter_map(|(i, c)| (c == '\r').then_some(i));
     let mut pos = 0;
     while let Some(end) = newlines.next() {
         let start = pos;
@@ -663,7 +663,7 @@ impl TableContentChild<'_> {
                             _ => {}
                         }
                     }
-                    Some((*depth == 0).then(|| e))
+                    Some((*depth == 0).then_some(e))
                 })
                 .flatten()
                 .flat_map(|x| x.text()),
