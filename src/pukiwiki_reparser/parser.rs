@@ -17,7 +17,7 @@ impl Document {
         }
 
         Document(BlockElements::parse(
-            document.select(&*BODY_SELECTOR).next().unwrap(),
+            document.select(&BODY_SELECTOR).next().unwrap(),
         ))
     }
 }
@@ -138,10 +138,10 @@ fn parse_table(parent: ElementRef) -> table::Table {
     }
 
     let body = parent
-        .select(&*TBODY_TR_SELECTOR)
+        .select(&TBODY_TR_SELECTOR)
         .map(|tr| {
             table::Row(
-                tr.select(&*TD_SELECTOR)
+                tr.select(&TD_SELECTOR)
                     .map(|td| {
                         let get_int = |attr: &'static str| {
                             td.value()

@@ -1,3 +1,7 @@
+use std::ops::Range;
+
+use pcre::Match;
+
 #[macro_export]
 macro_rules! pcre {
     ($pattern: expr $(, $($flags: ident)*)?) => {{
@@ -14,6 +18,11 @@ macro_rules! pcre {
     ($pattern: expr $(, $($flags: ident)*)? => $method: ident($($args: expr),*)) => {{
         let pattern = &$crate::pcre!($pattern $(, $($flags)*)?);
         pattern.with(|pat| pat.$method($($args),*))
+    }};
+
+    ($pattern: expr $(, $($flags: ident)*)? => ($arg: expr).$method: ident) => {{
+        let pattern = &$crate::pcre!($pattern $(, $($flags)*)?);
+        pattern.with(|pat| $arg.$method(pat))
     }};
 }
 
@@ -39,28 +48,57 @@ macro_rules! flags_add {
     };
 }
 
-mod inner {
-    use pcre::Match;
+pub struct Group<'a> {
+    str: &'a str,
+    range: Range<usize>,
+}
 
-    pub trait MatchExt {
-        fn group_opt<'a>(&self, n: usize) -> Option<&'a str>
-        where
-            Self: 'a;
-    }
+pub trait MatchExt {
+    fn group_obj<'a>(&self, n: usize) -> Option<Group<'a>>
+    where
+        Self: 'a;
 
-    impl<'s> MatchExt for Match<'s> {
-        fn group_opt<'a>(&self, n: usize) -> Option<&'s str>
-        where
-            Self: 'a,
-        {
-            (!self.group_start(n) > 0).then(|| self.group(n))
-        }
+    fn group_opt<'a>(&self, n: usize) -> Option<&'a str>
+    where
+        Self: 'a,
+    {
+        Some(self.group_obj(n)?.str)
     }
 }
-pub use inner::MatchExt;
+
+impl<'s> MatchExt for Match<'s> {
+    fn group_obj<'a>(&self, n: usize) -> Option<Group<'a>>
+    where
+        Self: 'a,
+    {
+        let start = self.group_start(n);
+        (!start > 0).then(|| Group {
+            str: self.group(n),
+            range: start..self.group_end(n),
+        })
+    }
+}
+
+impl<'a> Group<'a> {
+    pub fn as_str(&self) -> &'a str {
+        self.str
+    }
+
+    pub fn start(&self) -> usize {
+        self.range.start
+    }
+
+    pub fn end(&self) -> usize {
+        self.range.end
+    }
+
+    pub fn range(&self) -> Range<usize> {
+        self.range.clone()
+    }
+}
 
 #[cfg(test)]
-mod test {
+mod tests {
     use pcre::{CompileOption::*, Pcre};
 
     use super::MatchExt;

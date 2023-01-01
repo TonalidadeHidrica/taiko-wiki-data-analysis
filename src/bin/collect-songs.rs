@@ -209,7 +209,7 @@ mod song_list_page {
             if let IE::Text(ref star) = contents[0];
             then {
                 let captures = STAR_PATTERN.captures(star).unwrap();
-                let stars = (&captures[1]).parse::<u8>().unwrap();
+                let stars = captures[1].parse::<u8>().unwrap();
                 (page_title.to_owned(), stars)
             } else {
                 panic!();

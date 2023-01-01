@@ -14,6 +14,7 @@ use std::{error, fs};
 const URL_PREFIX: &str = "http://www.wikihouse.com/taiko/";
 
 #[derive(Debug)]
+#[allow(unused)]
 struct WikiFileEntry {
     title: String,
     last_update: String,
@@ -27,7 +28,7 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
     let file_entries = get_file_list(&reqwest_client).await?;
 
     let dump_dir = Path::new("dump-data");
-    fs::create_dir_all(&dump_dir)?;
+    fs::create_dir_all(dump_dir)?;
     let wiki_dir = dump_dir.join("wiki");
     fs::create_dir_all(&wiki_dir)?;
     let backup_dir = dump_dir.join("backup");

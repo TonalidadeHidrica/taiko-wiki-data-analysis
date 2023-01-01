@@ -167,7 +167,7 @@ impl<'a, T, I> Deref for Peeked<'a, T, I> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use itertools::Itertools;
 
     use crate::my_itertools::{MyItertools, PeekableExt};
@@ -207,11 +207,12 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::map_identity)]
     fn test_peeking_find() {
         let mut it = vec![3, 1, 4, 7, 5, 9, 2, 6].into_iter().peekable();
-        assert_eq!(it.peeking_find(|x| x % 2 == 0).map(|x| &*x), Some(&4));
+        assert_eq!(it.peeking_find(|x| x % 2 == 0).map(|x| x), Some(&4));
         assert_eq!(it.peek(), Some(&4));
-        assert_eq!(it.peeking_find(|x| x % 2 == 0).map(|x| &*x), Some(&4));
+        assert_eq!(it.peeking_find(|x| x % 2 == 0).map(|x| x), Some(&4));
         assert_eq!(it.peek(), Some(&4));
         assert_eq!(it.next(), Some(4));
         assert_eq!(it.peek(), Some(&7));
